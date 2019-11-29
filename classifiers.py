@@ -82,7 +82,7 @@ class LSTM_CLF():
             stack = Bidirectional(LSTM(self.hidden_size, return_sequences=True))(stack)
         rnn = Bidirectional(LSTM(self.hidden_size, return_sequences=False))(stack)
 
-        fnn = Dense(256, activation='tanh')(rnn)
+        fnn = Dense(128, activation='tanh')(rnn)
         fnn = Dense(1, activation='sigmoid', bias_initializer=tf.keras.initializers.Constant(bias))(fnn)
         self.model = Model(inputs=inputs1, outputs=fnn)
         self.model.compile(loss=self.loss,
@@ -149,9 +149,9 @@ class LSTM_IC1_CLF(LSTM_CLF):
         parent_rnn = Bidirectional(LSTM(64, return_sequences=False))(parent_emb)
 
         x = concatenate([target_rnn, parent_rnn])
-        x = keras.layers.Lambda(lambda embedding: K.l2_normalize(embedding, axis=1))(x)
+        #x = keras.layers.Lambda(lambda embedding: K.l2_normalize(embedding, axis=1))(x)
 
-        fnn = Dense(256, activation='tanh')(x)
+        fnn = Dense(128, activation='tanh')(x)
         fnn = Dense(1, activation='sigmoid', bias_initializer=tf.keras.initializers.Constant(bias))(fnn)
         self.model = Model(inputs=[target_input, parent_input], outputs=fnn)
         self.model.compile(loss=self.loss,
@@ -214,7 +214,7 @@ class LSTM_IC2_CLF(LSTM_IC1_CLF):
         parent_rnn = keras.layers.RepeatVector()(parent_rnn)
         # stack = keras.layers.merge([stack, parent_rnn], mode="concat")
         x = concatenate([stack, parent_rnn])
-        x = keras.layers.Lambda(lambda embedding: K.l2_normalize(embedding, axis=1))(x)
+        #x = keras.layers.Lambda(lambda embedding: K.l2_normalize(embedding, axis=1))(x)
 
         for i in range(self.stacks):
             x = Bidirectional(LSTM(self.hidden_size, return_sequences=True))(x)
@@ -419,7 +419,7 @@ class BERT_MLP_CA(BERT_MLP):
 
         # concatenating and normalizing the two embeddings
         x = concatenate([target_output, parent_rnn])
-        x = keras.layers.Lambda(lambda embedding: K.l2_normalize(embedding, axis=1))(x)
+        #x = keras.layers.Lambda(lambda embedding: K.l2_normalize(embedding, axis=1))(x)
 
         fnn = tf.keras.layers.Dense(256, activation='tanh')(x)
         fnn = Dense(1, activation='sigmoid', bias_initializer=tf.keras.initializers.Constant(bias))(fnn)

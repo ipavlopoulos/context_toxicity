@@ -148,6 +148,7 @@ def repeat_experiment(with_context, model_setting, steps):
     return np.mean(scores), sem(scores), predictions_pd, model_name # the last model used - the same for all runs
 
 def main(argv):
+    tf.random.set_seed(FLAGS.seed)
     if FLAGS.create_random_splits>0:
         print(f"Splitting the data randomly into {FLAGS.create_random_splits} splits")
         schema = "balanced" if FLAGS.use_balanced_datasets else "standard"
