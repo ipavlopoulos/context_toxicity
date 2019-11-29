@@ -26,6 +26,13 @@ flags.DEFINE_boolean("use_balanced_datasets", False, "If True, use the balanced 
 flags.DEFINE_string("splits_version", "random_ten", "The name of the splits directory. Default is 'random_ten'.")
 flags.DEFINE_string("experiment_version_name", f"version-{datetime.datetime.now().strftime('%d%B%Y-%H%M')}", "The name of the splits directory. Default is 'standard_ten'.")
 
+def evaluate_perspective(dataset_path="data/standard/random_ten", splits=10):
+    scores = []
+    for i in range(splits):
+        ic = pd.read_csv(f"{dataset_path}/{i}/ic.val.csv")
+        scores.append(roc_auc_score(ic.label, ic.api))
+    return scores
+
 def create_balanced_datasets():
     """
     Create balanced versions of the original datasets. Positive (here, toxic) examples have been removed from
@@ -64,8 +71,8 @@ def split_to_random_sets(splits=10, schema="standard", version_name="random_ten"
         os.makedirs(f"{path_name}/{split_num}")
         for setting in ("wc", "oc"):
             data_pd = pd.read_csv(f"data/{schema}/{setting}.csv")
-            train_pd, val_pd = train_test_split(data_pd, test_size=0.1, random_state=FLAGS.seed)
-            train_pd, dev_pd = train_test_split(train_pd, test_size=val_pd.shape[0], random_state=FLAGS.seed)
+            train_pd, val_pd = train_test_split(data_pd, test_size=0.1, random_state=FLAGS.seed+split_num)
+            train_pd, dev_pd = train_test_split(train_pd, test_size=val_pd.shape[0], random_state=FLAGS.seed+split_num)
             train_pd.to_csv(f"{path_name}/{split_num}/{setting.replace('w','i')}.train.csv")
             dev_pd.to_csv(f"{path_name}/{split_num}/{setting.replace('w','i')}.dev.csv")
             val_pd.to_csv(f"{path_name}/{split_num}/{setting.replace('w','i')}.val.csv")
@@ -85,7 +92,7 @@ def train(with_context, model_setting, verbose=1, splits_path="data/standard/spl
     embeddings = classifiers.load_embeddings_index()
 
     print("Creating the model...")
-    with tf.Session() as sess:
+    with tf.compat.v1.Session() as sess:
         if model_setting == "RNN:OOC":
             model = classifiers.LSTM_CLF(prefix=model_setting.lower(), verbose=verbose, n_epochs=FLAGS.epochs)
         else:
@@ -148,7 +155,7 @@ def repeat_experiment(with_context, model_setting, steps):
     return np.mean(scores), sem(scores), predictions_pd, model_name # the last model used - the same for all runs
 
 def main(argv):
-    tf.random.set_seed(FLAGS.seed)
+
     if FLAGS.create_random_splits>0:
         print(f"Splitting the data randomly into {FLAGS.create_random_splits} splits")
         schema = "balanced" if FLAGS.use_balanced_datasets else "standard"

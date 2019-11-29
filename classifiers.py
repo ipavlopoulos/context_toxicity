@@ -48,7 +48,10 @@ class LSTM_CLF():
                  loss="binary_crossentropy", monitor_loss="val_loss",
                  prefix="vanilla",
                  hidden_size=128,
+                 seed=42,
                  no_sigmoid=False):
+        tf.compat.v1.set_random_seed(seed)
+        np.random.seed(seed)
         self.verbose = verbose
         self.batch_size = batch_size
         self.early = EarlyStopping(monitor="val_auc",
@@ -274,6 +277,7 @@ class BERT_MLP():
                  show_summary=False,
                  label_list=[0, 1],
                  patience=3,
+                 seed=42,
                  epochs=100,
                  save_predictions=False,
                  batch_size=32,
@@ -284,6 +288,8 @@ class BERT_MLP():
                  session=None
                  ):
         self.session = session
+        tf.compat.v1.set_random_seed(seed)
+        np.random.seed(seed)
         self.name = f'{"OOC1" if not DATA2_COLUMN else "OOC2"}-b{batch_size}.e{epochs}.len{max_seq_length}.bert'
         self.tokenizer = self.create_tokenizer_from_hub_module()
         self.lr = lr
@@ -460,7 +466,6 @@ class BERT_MLP_CA(BERT_MLP):
         return x
 
     def predict(self, val_pd):
-        #with self.session.as_default():
         val_input, val_labels = self.to_bert_input(val_pd)
         parent_val_input = self.text_process(val_pd.parent)
         predictions = self.model.predict(list(val_input)+[parent_val_input])
