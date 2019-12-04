@@ -39,42 +39,6 @@ class CallbackAUC(Callback):
     def on_batch_end(self, batch, logs={}):
         return
 
-class CIB(object):
-    def __init__(self,
-                 gold_truth=np.array([], dtype=np.uint8),
-                 predictions=np.array([], dtype=np.uint8),
-                 method=roc_auc_score,
-                 resamples=2000,
-                 random_state=42):
-        self.method = method
-        self.gold = pd.Series(gold_truth)
-        self.predictions = pd.Series(predictions)
-        self.resamples = resamples
-        self.sample_evaluations = []
-        self.random_state = random_state
-        self.sorted_sample_evaluations = pd.Series()
-        assert self.gold.shape[0] == self.predictions.shape[0]
-        self.score = method(gold_truth, predictions)
-
-    def resample(self):
-        for _ in range(self.resamples):
-            gold = self.gold.sample(frac=.5, replace=True, random_state=self.random_state).to_list()
-            pred = self.predictions.sample(frac=.5, replace=True, random_state=self.random_state).to_list()
-            self.sample_evaluations.append(self.method(gold, pred))
-        self.sorted_sample_evaluations = pd.Series(sorted(self.sample_evaluations))
-
-    def get_cis(self, quantiles=[0.025, 0.975]):
-        assert self.sorted_sample_evaluations.shape[0]>0
-        lower_ci, upper_ci = self.sorted_sample_evaluations.quantile(quantiles)
-        return lower_ci, upper_ci
-
-    def evaluate(self, conf=.95):
-        self.resample()
-        a = (1.-conf) / 2.
-        q = [a, 1.-a]
-        l, u = self.get_cis(q)
-        return self.score, (l,u)
-
 class InputExample(object):
     """A single training/test example for simple sequence classification."""
 
@@ -308,3 +272,51 @@ def convert_examples_to_features(examples, label_list, max_seq_length,
 
         features.append(feature)
     return features
+
+def perspective_evaluate(split=0, schema="standard"):
+    ic = pd.read_csv(f"data/{schema}/random_ten/{split}/ic.val.csv")
+    return roc_auc_score(ic.label, ic.api)
+
+class PERSPECTIVE_WRAPPER():
+
+    def __init__(self):
+        from googleapiclient import discovery
+        import config
+        self.API_KEY = config.GOOGLE_API_KEY
+        # Generates API client object dynamically based on service name and version.
+        self.service = discovery.build('commentanalyzer', 'v1alpha1', developerKey=self.API_KEY)
+
+    def call(self, text, lan=None, max_chars=2000):
+        analyze_request = {
+            'comment': {'text': text[:max_chars]},
+            'requestedAttributes': {'TOXICITY': {}}
+        }
+        if lan is not None:
+            analyze_request['languages'] = [lan]
+        try:
+            response = self.service.comments().analyze(body=analyze_request).execute()
+            return response['attributeScores']['TOXICITY']['summaryScore']['value']
+        except Exception as e:
+            print('FAIL: %s' % str(e))
+            return -1
+
+    def batch_call(self, data):
+        probs, fails = {}, []
+        for i, d in enumerate(data):
+            p = self.call(d)
+            if p < 0:
+                fails.append(i)
+            else:
+                probs[i] = p
+        # WARNING: If attribute language is used by default in call_perspective, many texts are not fetched
+        for i in fails:
+            probs[i] = self.call(data[i], lan='en')
+        return probs
+
+    def evaluate_at_split(self, split=9, schema="standard", with_context=True):
+        ic = pd.read_csv(f"data/{schema}/random_ten/{split}/ic.val.csv")
+        texts = ic.text
+        if with_context:
+            texts = ic.parent + ic.text
+        scores = self.batch_call(texts.to_list())
+        return scores

@@ -2,7 +2,6 @@ from sklearn.model_selection import train_test_split
 import pandas as pd
 from absl import flags, logging, app
 import numpy as np
-import helper
 import classifiers
 from sklearn.metrics import *
 from scipy.stats import sem
@@ -15,8 +14,9 @@ flags.DEFINE_string("model_name", None, "name:OOC' for Out Of Context architectu
 flags.DEFINE_boolean("with_context_data", False, "False for context-less training data.")  # name , default, help
 flags.DEFINE_integer("oversample", 1, "Oversample the positive class, e.g., 99/1 (enter 99)")
 flags.DEFINE_integer("repeat", 0, "Repetitions of the experiment. Default is 0.")
+flags.DEFINE_integer("at_split", 0, "Operate on specific split. Default is 0.")
 flags.DEFINE_integer("epochs", 100, "Epochs. Default is 100.")
-flags.DEFINE_boolean("confidence_intervals", True, "Show Confidence Intervals along with AUROCC")  # name , default, help
+flags.DEFINE_integer("confidence_intervals", 1, "Show Confidence Intervals along with AUROCC")  # name , default, help
 flags.DEFINE_integer("create_random_splits", 0, "Create random splits. Default number is 0, which means: 'do not split'.")
 flags.DEFINE_integer("patience", 10, "Waiting epochs for the best performance. Default is 10.")  # name , default, help
 flags.DEFINE_integer("seed", 42, "The seed to initialise the random state. Default is 42.")
@@ -32,26 +32,27 @@ def evaluate_perspective(dataset_path="data/standard/random_ten", splits=10):
         scores.append(roc_auc_score(ic.label, ic.api))
     return scores
 
-def create_balanced_datasets():
+def create_balanced_datasets(path="data/standard/random_ten/0"):
     """
-    Create balanced versions of the original datasets. Positive (here, toxic) examples have been removed from
-    the less imbalanced class, while the same number of negative examples have been removed from the more
+    Create balanced versions of a dataset.
+    Positive (here, toxic) examples have been removed from the less imbalanced class,
+    while the same number of negative examples have been removed from the more
     imbalanced class. The outcome is two equally sized and balanced datasets.
     :return:
     """
-    oc_pd = pd.read_csv(f"data/original/oc.csv")
-    oc_pd = oc_pd.sample(frac=1, random_state=FLAGS.seed)
-    ic_pd = pd.read_csv(f"data/original/wc.csv")
-    ic_pd = ic_pd.sample(frac=1, random_state=FLAGS.seed)
-    print(f"Class balance of datasets, InC vs. OoC: {oc_pd.label.sum()/oc_pd.shape[0]} - {ic_pd.label.sum()/ic_pd.shape[0]}")
-    # remove positive (toxic) examples from the less imbalanced set and negative from the other
-    diff = ic_pd.label.sum() - oc_pd.label.sum()
-    ic_pd.drop(ic_pd[ic_pd.label == 1].index[:diff], inplace=True)
-    oc_pd.drop(oc_pd[oc_pd.label == 0].index[:diff], inplace=True)
-    print(f"InC vs. OoC: {oc_pd.label.sum()/oc_pd.shape[0]} - {ic_pd.label.sum()/ic_pd.shape[0]}")
-    os.mkdir("data/balanced")
-    ic_pd.to_csv("data/balanced/wc.csv")
-    oc_pd.to_csv("data/balanced/oc.csv")
+    for mode in ("train", "val", "dev"):
+        oc_pd = pd.read_csv(f"{path}/oc.{mode}.csv")
+        oc_pd = oc_pd.sample(frac=1, random_state=FLAGS.seed)
+        ic_pd = pd.read_csv(f"{path}/ic.{mode}.csv")
+        ic_pd = ic_pd.sample(frac=1, random_state=FLAGS.seed)
+        #print(f"Class balance of datasets, InC vs. OoC: {oc_pd.label.sum()/oc_pd.shape[0]} - {ic_pd.label.sum()/ic_pd.shape[0]}")
+        # remove positive (toxic) examples from the less imbalanced set and negative from the other
+        diff = ic_pd.label.sum() - oc_pd.label.sum()
+        ic_pd.drop(ic_pd[ic_pd.label == 1].index[:diff], inplace=True)
+        oc_pd.drop(oc_pd[oc_pd.label == 0].index[:diff], inplace=True)
+        #print(f"InC vs. OoC: {oc_pd.label.sum()/oc_pd.shape[0]} - {ic_pd.label.sum()/ic_pd.shape[0]}")
+        ic_pd.to_csv(f"{path}/ic.{mode}.balanced.csv")
+        oc_pd.to_csv(f"{path}/oc.{mode}.balanced.csv")
 
 def split_to_random_sets(splits=10, schema="standard", version_name="random_ten"):
     """
@@ -76,14 +77,12 @@ def split_to_random_sets(splits=10, schema="standard", version_name="random_ten"
             dev_pd.to_csv(f"{path_name}/{split_num}/{setting.replace('w','i')}.dev.csv")
             val_pd.to_csv(f"{path_name}/{split_num}/{setting.replace('w','i')}.val.csv")
 
-def train(with_context, verbose=1, splits_path="data/standard/splits-10", the_split_to_use=9):
+def train(with_context, verbose=1, splits_path="data/standard/random_ten", the_split_to_use=9):
     print(f"Loading the data... Using the '{splits_path}/{the_split_to_use}' split.")
-    if with_context:
-        train_pd = pd.read_csv(f"{splits_path}/{the_split_to_use}/ic.train.csv")
-        dev_pd = pd.read_csv(f"{splits_path}/{the_split_to_use}/ic.dev.csv")
-    else:
-        train_pd = pd.read_csv(f"{splits_path}/{the_split_to_use}/oc.train.csv")
-        dev_pd = pd.read_csv(f"{splits_path}/{the_split_to_use}/oc.dev.csv")
+    ctx_id = 'i' if with_context else 'o'
+    mod_id = 'balanced.' if FLAGS.use_balanced_datasets else ''
+    train_pd = pd.read_csv(f"{splits_path}/{the_split_to_use}/{ctx_id}c.train.{mod_id}csv")
+    dev_pd = pd.read_csv(f"{splits_path}/{the_split_to_use}/{ctx_id}c.dev.csv")
     val_pd = pd.read_csv(f"{splits_path}/{the_split_to_use}/ic.val.csv")
 
     print("Loading the embeddings...")
@@ -110,27 +109,26 @@ def train(with_context, verbose=1, splits_path="data/standard/splits-10", the_sp
                         print("Training BERT with no context mechanism added.")
                         model = classifiers.BERT_MLP(patience=patience, lr=lr,  epochs=FLAGS.epochs, session=sess)
                     elif FLAGS.model_name == "BERT:INC1":
-                        print("Training BERT with text-parent concatenated.")
+                        print("Training BERT with parent concatenated to text.")
                         model = classifiers.BERT_MLP(patience=patience, lr=lr, DATA2_COLUMN="parent", epochs=FLAGS.epochs, session=sess)
                     elif FLAGS.model_name == "BERT:INC2":
-                        print("Training BERT with parent-text concatenated.")
-                        model = classifiers.BERT_MLP(patience=patience, lr=lr, DATA2_COLUMN="parent", epochs=FLAGS.epochs, session=sess)
-                    elif FLAGS.model_name == "BERT:INC3":
                         print("Training BERT with a context-reading mechanism added.")
                         model = classifiers.BERT_MLP_CA(patience=patience, lr=lr, epochs=FLAGS.epochs, session=sess)
                     else:
                         sys.exit("ERROR: Not implemented yet...")
 
-        print("Training...")
+        print(f"Training {model.name}...")
         model.fit(train=train_pd, dev=dev_pd, class_weights=class_weights, pretrained_embeddings=embeddings)
         gold, predictions = val_pd.label.to_numpy(), model.predict(val_pd).flatten()
         score = roc_auc_score(gold, predictions)
         print("Evaluating...")
+        print(f"ROC-AUC: {score}")
         print(f"STATS: toxicity (%) at predicted: {np.mean(predictions)} vs at gold: {np.mean(gold)}")
-        if not FLAGS.confidence_intervals:
-            print(f"ROC-AUC: {score}")
-        else:
-            score, intervals = helper.CIB(gold_truth=list(gold), predictions=list(predictions)).evaluate()
+        if FLAGS.confidence_intervals !=0:
+            # WARNING: dependency on the ssig package
+            # git clone https://github.com/ipavlopoulos/ssig.git
+            from ssig import ci
+            score, intervals = ci.AUC(gold_truth=list(gold), predictions=list(predictions)).evaluate()
             print(f"ROC-AUC ± CIs: {score} ± {intervals}")
     return score, predictions, model
 
@@ -154,15 +152,13 @@ def repeat_experiment(with_context, steps):
     return np.mean(scores), sem(scores), predictions_pd, model_name # the last model used - the same for all runs
 
 def model_train(at_split):
-    splits_path = f"data/" \
-                  f"{'balanced' if FLAGS.use_balanced_datasets else 'standard'}" \
-                  f"/{FLAGS.splits_version}"
+    splits_path = f"data/standard/{FLAGS.splits_version}"
 
     score, predictions, model = train(FLAGS.with_context_data,
                                       FLAGS.model_name,
                                       splits_path=splits_path,
                                       the_split_to_use=at_split)
-
+    #model.save() todo: fix.
     return score, predictions
 
 def main(argv):
@@ -172,11 +168,11 @@ def main(argv):
         schema = "balanced" if FLAGS.use_balanced_datasets else "standard"
         split_to_random_sets(splits=FLAGS.create_random_splits, schema=schema, version_name=FLAGS.splits_version)
     elif FLAGS.create_balanced_datasets:
-        create_balanced_datasets()
+        for i in range(10):
+            create_balanced_datasets(f"data/standard/random_ten/{i}")
     elif FLAGS.repeat == 0:
         # last split selected arbitrarily
-        split_num = 9
-        score, predictions = model_train(split_num)
+        score, predictions = model_train(FLAGS.at_split)
         print(f"{score}")
         pd.DataFrame(predictions).to_csv(f"{FLAGS.model_name}.predictions.csv")
     else:

@@ -17,6 +17,7 @@ import tensorflow_hub as hub
 from tensorflow.keras import backend as K
 from bert import tokenization
 from sklearn.metrics import *
+import pickle
 
 BERT_MODEL_PATH = "https://tfhub.dev/google/bert_cased_L-12_H-768_A-12/1"
 
@@ -241,6 +242,15 @@ class BERT(tf.keras.layers.Layer):
         self.trainable = True
         super(BERT, self).__init__(**kwargs)
 
+    def get_config(self):
+        config = super().get_config().copy()
+        config.update({
+            'n_fine_tune_top_layers': self.n_fine_tune_top_layers,
+            'trainable': self.trainable,
+            'bert': self.bert
+        })
+        return config
+
     def build(self, input_shape):
         self.bert = hub.Module(BERT_MODEL_PATH, trainable=self.trainable,
                                name="{}_module".format(self.name))
@@ -389,7 +399,9 @@ class BERT_MLP():
         K.set_session(self.session)
 
     def save(self):
-        self.model.save(self.name)
+        self.model.save(f"{self.name}.weights.h5")
+        with open(f"{self.name}.model", "wb") as handler:
+            pickle.dump(self, handler, protocol=pickle.HIGHEST_PROTOCOL)
 
     def model_show(self):
         print(self.model.summary())
@@ -398,10 +410,23 @@ class BERT_MLP():
 class BERT_MLP_CA(BERT_MLP):
 
     def __init__(self, max_length=128, **kwargs):
-        super().__init__(**kwargs)
         self.name = f'{"CA"}-b{self.batch_size}.e{self.epochs}.len{self.max_seq_length}.bert'
         self.parent_tokenizer = Tokenizer()
         self.max_length = max_length
+        super(BERT_MLP_CA, self).__init__(**kwargs)
+
+    def save(self):
+        self.model.save_weights(self.name + ".weights")
+        self.model.save(self.name)
+
+    def get_config(self):
+        config = super().get_config().copy()
+        config.update({
+            "name":self.name,
+            "parent_tokenizer":self.parent_tokenizer,
+            "max_length": self.max_length
+        })
+        return config
 
     def load_embeddings(self, pretrained_dict):
         self.embedding_matrix = np.zeros((self.vocab_size + 2, 100))
