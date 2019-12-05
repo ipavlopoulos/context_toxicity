@@ -224,18 +224,124 @@ class LSTM_IC2_CLF(LSTM_IC1_CLF):
             x = Bidirectional(LSTM(self.hidden_size, return_sequences=True))(x)
         rnn = Bidirectional(LSTM(128, return_sequences=False))(x)
 
-        fnn = Dense(256, activation='tanh')(rnn)
+        fnn = Dense(128, activation='tanh')(rnn)
         fnn = Dense(1, activation='sigmoid', bias_initializer=tf.keras.initializers.Constant(bias))(fnn)
         self.model = Model(inputs=[target_input, parent_input], outputs=fnn)
         self.model.compile(loss=self.loss,
                            optimizer=keras.optimizers.Adam(),
                            metrics=METRICS)
 
+
 class BERT(tf.keras.layers.Layer):
+    """
+    Extending the code from:
+    https://towardsdatascience.com/fine-tuning-bert-with-keras-and-tf-module-ed24ea91cff2
+    The layers to fine tuned are selected by name.
+    """
+    def __init__(
+            self,
+            n_fine_tune_top_layers=10,
+            trainable=True,
+            pooling="first",
+            output_size=768,
+            **kwargs,
+    ):
+        self.n_fine_tune_layers = n_fine_tune_top_layers
+        self.trainable = trainable
+        self.output_size = output_size
+        self.pooling = pooling
+        self.bert_path = BERT_MODEL_PATH
+        if self.pooling not in ["first", "mean"]:
+            raise NameError(f"Undefined pooling type (must be either first or mean, but is {self.pooling}")
+        super(BERT, self).__init__(**kwargs)
+
+    def get_config(self):
+        config = super().get_config().copy()
+        config.update({
+            'n_fine_tune_top_layers': self.n_fine_tune_top_layers,
+            'trainable': self.trainable,
+            'bert': self.bert,
+            'pooling': self.pooling,
+        })
+        return config
+
+    def build(self, input_shape):
+        self.bert = hub.Module(
+            self.bert_path, trainable=self.trainable, name=f"{self.name}_module"
+        )
+
+        # Remove unused layers
+        trainable_vars = self.bert.variables
+        if self.pooling == "first":
+            trainable_vars = [var for var in trainable_vars if not "/cls/" in var.name]
+            trainable_layers = ["pooler/dense"]
+
+        elif self.pooling == "mean":
+            trainable_vars = [
+                var
+                for var in trainable_vars
+                if not "/cls/" in var.name and not "/pooler/" in var.name
+            ]
+            trainable_layers = []
+        else:
+            raise NameError(
+                f"Undefined pooling type (must be either first or mean, but is {self.pooling}"
+            )
+
+        # Select how many layers to fine tune
+        for i in range(self.n_fine_tune_layers):
+            trainable_layers.append(f"encoder/layer_{str(11 - i)}")
+
+        # Update trainable vars to contain only the specified layers
+        trainable_vars = [
+            var
+            for var in trainable_vars
+            if any([l in var.name for l in trainable_layers])
+        ]
+
+        # Add to trainable weights
+        for var in trainable_vars:
+            self._trainable_weights.append(var)
+
+        for var in self.bert.variables:
+            if var not in self._trainable_weights:
+                self._non_trainable_weights.append(var)
+
+        super(BERT, self).build(input_shape)
+
+    def call(self, inputs):
+        inputs = [K.cast(x, dtype="int32") for x in inputs]
+        input_ids, input_mask, segment_ids = inputs
+        bert_inputs = dict(
+            input_ids=input_ids, input_mask=input_mask, segment_ids=segment_ids
+        )
+        if self.pooling == "first":
+            pooled = self.bert(inputs=bert_inputs, signature="tokens", as_dict=True)[
+                "pooled_output"
+            ]
+        elif self.pooling == "mean":
+            result = self.bert(inputs=bert_inputs, signature="tokens", as_dict=True)[
+                "sequence_output"
+            ]
+
+            mul_mask = lambda x, m: x * tf.expand_dims(m, axis=-1)
+            masked_reduce_mean = lambda x, m: tf.reduce_sum(mul_mask(x, m), axis=1) / (
+                    tf.reduce_sum(m, axis=1, keepdims=True) + 1e-10)
+            input_mask = tf.cast(input_mask, tf.float32)
+            pooled = masked_reduce_mean(result, input_mask)
+        else:
+            raise NameError(f"Undefined pooling type (must be either first or mean, but is {self.pooling}")
+
+        return pooled
+
+    def compute_output_shape(self, input_shape):
+        return (input_shape[0], self.output_size)
+
+class DEPRECATED_BERT(tf.keras.layers.Layer):
 
     def __init__(self, n_fine_tune_top_layers=3, **kwargs):
         """
-        :n_fine_tune_layers: 0 for all, n for top n layers trainable
+        :n_fine_tune_layers: n for top n layers trainable
         """
         self.bert = None
         self.n_fine_tune_top_layers = n_fine_tune_top_layers
@@ -326,7 +432,7 @@ class BERT_MLP():
         in_segment = tf.keras.layers.Input(shape=(self.max_seq_length,), name="segment_ids")
         bert_inputs = [in_id, in_mask, in_segment]
         bert_output = BERT(n_fine_tune_top_layers=self.trainable_layers)(bert_inputs)
-        dense = tf.keras.layers.Dense(256, activation='tanh')(bert_output)
+        dense = tf.keras.layers.Dense(128, activation='tanh')(bert_output)
         pred = tf.keras.layers.Dense(1, activation='sigmoid')(dense)
         model = tf.keras.models.Model(inputs=bert_inputs, outputs=pred)
 
@@ -410,10 +516,10 @@ class BERT_MLP():
 class BERT_MLP_CA(BERT_MLP):
 
     def __init__(self, max_length=128, **kwargs):
+        super(BERT_MLP_CA, self).__init__(**kwargs)
         self.name = f'{"CA"}-b{self.batch_size}.e{self.epochs}.len{self.max_seq_length}.bert'
         self.parent_tokenizer = Tokenizer()
         self.max_length = max_length
-        super(BERT_MLP_CA, self).__init__(**kwargs)
 
     def save(self):
         self.model.save_weights(self.name + ".weights")
@@ -452,7 +558,7 @@ class BERT_MLP_CA(BERT_MLP):
         x = concatenate([target_output, parent_rnn])
         #x = keras.layers.Lambda(lambda embedding: K.l2_normalize(embedding, axis=1))(x)
 
-        fnn = tf.keras.layers.Dense(256, activation='tanh')(x)
+        fnn = tf.keras.layers.Dense(128, activation='tanh')(x)
         fnn = Dense(1, activation='sigmoid', bias_initializer=tf.keras.initializers.Constant(bias))(fnn)
         #fnn = tf.keras.layers.Dense(1, activation='sigmoid')(fnn)
         self.model = tf.keras.models.Model(inputs=target_input+[parent_input], outputs=fnn)

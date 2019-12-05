@@ -18,12 +18,12 @@ flags.DEFINE_integer("at_split", 0, "Operate on specific split. Default is 0.")
 flags.DEFINE_integer("epochs", 100, "Epochs. Default is 100.")
 flags.DEFINE_integer("confidence_intervals", 1, "Show Confidence Intervals along with AUROCC")  # name , default, help
 flags.DEFINE_integer("create_random_splits", 0, "Create random splits. Default number is 0, which means: 'do not split'.")
-flags.DEFINE_integer("patience", 10, "Waiting epochs for the best performance. Default is 10.")  # name , default, help
+flags.DEFINE_integer("patience", 3, "Waiting epochs for the best performance. Default is 10.")  # name , default, help
 flags.DEFINE_integer("seed", 42, "The seed to initialise the random state. Default is 42.")
 flags.DEFINE_boolean("create_balanced_datasets", False, "If True, use downsampling to create balanced versions of the original datasets.")
-flags.DEFINE_boolean("use_balanced_datasets", False, "If True, use the balanced datasets.")
 flags.DEFINE_string("splits_version", "random_ten", "The name of the splits directory. Default is 'random_ten'.")
 flags.DEFINE_string("experiment_version_name", f"version-{datetime.datetime.now().strftime('%d%B%Y-%H%M')}", "The name of the splits directory. Default is 'standard_ten'.")
+flags.DEFINE_string("schema", "standard.622", "'standard' for original distributions, 'balanced' for downsampled, 'standard.622' for 60/20/20 split")
 
 def evaluate_perspective(dataset_path="data/standard/random_ten", splits=10):
     scores = []
@@ -54,7 +54,7 @@ def create_balanced_datasets(path="data/standard/random_ten/0"):
         ic_pd.to_csv(f"{path}/ic.{mode}.balanced.csv")
         oc_pd.to_csv(f"{path}/oc.{mode}.balanced.csv")
 
-def split_to_random_sets(splits=10, schema="standard", version_name="random_ten"):
+def split_to_random_sets(splits=10, test_size=0.2, schema="standard", version_name="random_ten"):
     """
     Split the datasets to random sets.
     :param splits: Number of sets to split.
@@ -62,7 +62,8 @@ def split_to_random_sets(splits=10, schema="standard", version_name="random_ten"
     :param version: The version name, under which the splits will be saved.
     :return:
     """
-    assert schema in {"standard", "balanced"}
+    assert schema in {"standard", "balanced", "standard.622"}
+    if schema != "standard.622": test_size = 0.1
     path_name = f"data/{schema}/{version_name}"
     if os.path.exists(path_name):
         sys.exit(f"ERROR: {path_name} is not empty.")
@@ -70,8 +71,8 @@ def split_to_random_sets(splits=10, schema="standard", version_name="random_ten"
     for split_num in range(splits):
         os.makedirs(f"{path_name}/{split_num}")
         for setting in ("wc", "oc"):
-            data_pd = pd.read_csv(f"data/{schema}/{setting}.csv")
-            train_pd, val_pd = train_test_split(data_pd, test_size=0.1, random_state=FLAGS.seed+split_num)
+            data_pd = pd.read_csv(f"data/{schema if '.' not in schema else schema.split('.')[0]}/{setting}.csv")
+            train_pd, val_pd = train_test_split(data_pd, test_size=test_size, random_state=FLAGS.seed+split_num)
             train_pd, dev_pd = train_test_split(train_pd, test_size=val_pd.shape[0], random_state=FLAGS.seed+split_num)
             train_pd.to_csv(f"{path_name}/{split_num}/{setting.replace('w','i')}.train.csv")
             dev_pd.to_csv(f"{path_name}/{split_num}/{setting.replace('w','i')}.dev.csv")
@@ -80,7 +81,7 @@ def split_to_random_sets(splits=10, schema="standard", version_name="random_ten"
 def train(with_context, verbose=1, splits_path="data/standard/random_ten", the_split_to_use=9):
     print(f"Loading the data... Using the '{splits_path}/{the_split_to_use}' split.")
     ctx_id = 'i' if with_context else 'o'
-    mod_id = 'balanced.' if FLAGS.use_balanced_datasets else ''
+    mod_id = 'balanced.' if "balanced" in FLAGS.schema else ''
     train_pd = pd.read_csv(f"{splits_path}/{the_split_to_use}/{ctx_id}c.train.{mod_id}csv")
     dev_pd = pd.read_csv(f"{splits_path}/{the_split_to_use}/{ctx_id}c.dev.csv")
     val_pd = pd.read_csv(f"{splits_path}/{the_split_to_use}/ic.val.csv")
@@ -137,11 +138,10 @@ def repeat_experiment(with_context, steps):
     scores = []
     predictions_pd = pd.DataFrame()
     model_name = ""
-    splits_path = f"data/{'balanced' if FLAGS.use_balanced_datasets else 'standard'}/{FLAGS.splits_version}"
+    splits_path = f"data/{FLAGS.schema}/{FLAGS.splits_version}"
     if not os.path.exists(splits_path):
         sys.exit(f"ERROR: {splits_path} is empty! Make sure the desired dataset is successfully created.")
-    if FLAGS.use_balanced_datasets:
-        FLAGS.experiment_version_name += ".balanced"
+    FLAGS.experiment_version_name += "." + FLAGS.schema
     os.mkdir(FLAGS.experiment_version_name)
     for i in range(steps):
         print(f"REPETITION: {i}")
@@ -152,8 +152,7 @@ def repeat_experiment(with_context, steps):
     return np.mean(scores), sem(scores), predictions_pd, model_name # the last model used - the same for all runs
 
 def model_train(at_split):
-    splits_path = f"data/standard/{FLAGS.splits_version}"
-
+    splits_path = f"data/{FLAGS.schema}/{FLAGS.splits_version}"
     score, predictions, model = train(FLAGS.with_context_data,
                                       FLAGS.model_name,
                                       splits_path=splits_path,
@@ -165,18 +164,17 @@ def main(argv):
 
     if FLAGS.create_random_splits>0:
         print(f"Splitting the data randomly into {FLAGS.create_random_splits} splits")
-        schema = "balanced" if FLAGS.use_balanced_datasets else "standard"
-        split_to_random_sets(splits=FLAGS.create_random_splits, schema=schema, version_name=FLAGS.splits_version)
+        split_to_random_sets(splits=FLAGS.create_random_splits, schema=FLAGS.schema, version_name=FLAGS.splits_version)
     elif FLAGS.create_balanced_datasets:
         for i in range(10):
-            create_balanced_datasets(f"data/standard/random_ten/{i}")
+            create_balanced_datasets(f"data/{FLAGS.schema}/{FLAGS.splits_version}/{i}")
     elif FLAGS.repeat == 0:
-        # last split selected arbitrarily
+        # first split selected arbitrarily
         score, predictions = model_train(FLAGS.at_split)
         print(f"{score}")
         pd.DataFrame(predictions).to_csv(f"{FLAGS.model_name}.predictions.csv")
     else:
-        score, sem, predictions_pd, model_name = repeat_experiment(with_context=FLAGS.with_context_data, model_setting=FLAGS.model_name, steps=FLAGS.repeat)
+        score, sem, predictions_pd, model_name = repeat_experiment(with_context=FLAGS.with_context_data, steps=FLAGS.repeat)
         predictions_pd.to_csv(f"{FLAGS.experiment_version_name}/{model_name}.predictions.csv")
         print (f"{score} ± {sem}")
 
