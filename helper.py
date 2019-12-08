@@ -273,8 +273,8 @@ def convert_examples_to_features(examples, label_list, max_seq_length,
         features.append(feature)
     return features
 
-def perspective_evaluate(split=0, schema="standard", mode="val"):
-    ic = pd.read_csv(f"data/{schema}/random_ten/{split}/ic.{mode}.csv")
+def perspective_evaluate(split=0, schema="standard", mode="val", setting="ic"):
+    ic = pd.read_csv(f"data/{schema}/random_ten/{split}/{setting}.{mode}.csv")
     return roc_auc_score(ic.label, ic.api)
 
 class PERSPECTIVE_WRAPPER():

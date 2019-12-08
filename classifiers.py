@@ -426,21 +426,20 @@ class BERT_MLP():
                                                           restore_best_weights=True,
                                                           mode="max")
 
-    def build(self):
+    def build(self, bias=0):
         in_id = tf.keras.layers.Input(shape=(self.max_seq_length,), name="input_ids")
         in_mask = tf.keras.layers.Input(shape=(self.max_seq_length,), name="input_masks")
         in_segment = tf.keras.layers.Input(shape=(self.max_seq_length,), name="segment_ids")
         bert_inputs = [in_id, in_mask, in_segment]
         bert_output = BERT(n_fine_tune_top_layers=self.trainable_layers)(bert_inputs)
         dense = tf.keras.layers.Dense(128, activation='tanh')(bert_output)
-        pred = tf.keras.layers.Dense(1, activation='sigmoid')(dense)
-        model = tf.keras.models.Model(inputs=bert_inputs, outputs=pred)
-
-        model.compile(loss='binary_crossentropy',
+        pred = tf.keras.layers.Dense(1, activation='sigmoid', bias_initializer=tf.keras.initializers.Constant(bias))(dense)
+        self.model = tf.keras.models.Model(inputs=bert_inputs, outputs=pred)
+        self.model.compile(loss='binary_crossentropy',
                       optimizer=tf.keras.optimizers.Adam(learning_rate=self.lr),
                       metrics=METRICS)
-        if self.show_summary: model.summary()
-        return model
+        if self.show_summary:
+            self.model.summary()
 
     def get_features(self, features):
         input_ids, input_masks, segment_ids, labels = [], [], [], []
@@ -463,10 +462,16 @@ class BERT_MLP():
         x_input_ids, x_input_masks, x_segment_ids, x_labels = self.get_features(x_features)
         return (x_input_ids, x_input_masks, x_segment_ids), x_labels
 
-    def fit(self, train, dev, class_weights={0: 1, 1: 1}, pretrained_embeddings=None):
+    def fit(self, train, dev, bert_weights=None, class_weights={0: 1, 1: 1}, pretrained_embeddings=None):
         train_input, train_labels = self.to_bert_input(train)
         dev_input, dev_labels = self.to_bert_input(dev)
-        self.model = self.build()
+        pos = sum(train_labels)
+        neg = len(train_labels)-pos
+        bias = np.log(pos/neg)
+        print ("BIAS:", bias)
+        self.build(bias=bias)
+        if bert_weights is not None:
+            self.model.load_weights(bert_weights)
         self.initialise_vars() # instantiation needs to be right before fitting
         self.model.fit(train_input,
                        train_labels,
@@ -506,8 +511,6 @@ class BERT_MLP():
 
     def save(self):
         self.model.save(f"{self.name}.weights.h5")
-        with open(f"{self.name}.model", "wb") as handler:
-            pickle.dump(self, handler, protocol=pickle.HIGHEST_PROTOCOL)
 
     def model_show(self):
         print(self.model.summary())
@@ -520,19 +523,6 @@ class BERT_MLP_CA(BERT_MLP):
         self.name = f'{"CA"}-b{self.batch_size}.e{self.epochs}.len{self.max_seq_length}.bert'
         self.parent_tokenizer = Tokenizer()
         self.max_length = max_length
-
-    def save(self):
-        self.model.save_weights(self.name + ".weights")
-        self.model.save(self.name)
-
-    def get_config(self):
-        config = super().get_config().copy()
-        config.update({
-            "name":self.name,
-            "parent_tokenizer":self.parent_tokenizer,
-            "max_length": self.max_length
-        })
-        return config
 
     def load_embeddings(self, pretrained_dict):
         self.embedding_matrix = np.zeros((self.vocab_size + 2, 100))
@@ -566,7 +556,7 @@ class BERT_MLP_CA(BERT_MLP):
                       optimizer=tf.keras.optimizers.Adam(learning_rate=self.lr),
                       metrics=METRICS)
 
-    def fit(self, train, dev, pretrained_embeddings, batch_size=32, class_weights={0: 1, 1: 1}):
+    def fit(self, train, dev, pretrained_embeddings, bert_weights=None, batch_size=32, class_weights={0: 1, 1: 1}):
         self.parent_tokenizer.fit_on_texts(train.text)
         self.vocab_size = len(self.parent_tokenizer.word_index) + 1
         train_input, train_labels = self.to_bert_input(train)
@@ -578,7 +568,10 @@ class BERT_MLP_CA(BERT_MLP):
         pos = sum(train_labels)
         neg = len(train_labels)-pos
         bias = np.log(pos/neg)
+        print ("BIAS:", bias)
         self.build(bias=bias)
+        if bert_weights is not None:
+            self.model.load_weights(bert_weights)
         self.model_show()
         print (f"OLD-SCHOOL LOG: Training {self.name}...")
         self.initialise_vars()

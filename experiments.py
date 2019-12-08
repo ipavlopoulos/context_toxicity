@@ -7,6 +7,7 @@ from sklearn.metrics import *
 from scipy.stats import sem
 import tensorflow as tf
 import os, sys
+import json
 import datetime
 
 FLAGS = flags.FLAGS
@@ -23,7 +24,9 @@ flags.DEFINE_integer("seed", 42, "The seed to initialise the random state. Defau
 flags.DEFINE_boolean("create_balanced_datasets", False, "If True, use downsampling to create balanced versions of the original datasets.")
 flags.DEFINE_string("splits_version", "random_ten", "The name of the splits directory. Default is 'random_ten'.")
 flags.DEFINE_string("experiment_version_name", f"version-{datetime.datetime.now().strftime('%d%B%Y-%H%M')}", "The name of the splits directory. Default is 'standard_ten'.")
-flags.DEFINE_string("schema", "standard.622", "'standard' for original distributions, 'balanced' for downsampled, 'standard.622' for 60/20/20 split")
+flags.DEFINE_string("schema", "balanced", "'standard' for original distributions, 'balanced' for downsampled")
+flags.DEFINE_string("split", "standard.622", "'standard' for 80/10/10 split, 'standard.622' for 60/20/20 split")
+flags.DEFINE_string("bert_weights", None, "Load and use the weights of a pre-trained BERT.")
 
 def evaluate_perspective(dataset_path="data/standard/random_ten", splits=10):
     scores = []
@@ -62,16 +65,18 @@ def split_to_random_sets(splits=10, test_size=0.2, schema="standard", version_na
     :param version: The version name, under which the splits will be saved.
     :return:
     """
-    assert schema in {"standard", "balanced", "standard.622"}
-    if schema != "standard.622": test_size = 0.1
-    path_name = f"data/{schema}/{version_name}"
+    assert schema in {"standard", "balanced"}
+    assert FLAGS.split in {"standard.622", "standard"}
+    if FLAGS.split[-3:] != "622":
+        test_size = 0.1
+    path_name = f"data/{FLAGS.split}/{version_name}"
     if os.path.exists(path_name):
         sys.exit(f"ERROR: {path_name} is not empty.")
     os.makedirs(path_name)
     for split_num in range(splits):
         os.makedirs(f"{path_name}/{split_num}")
         for setting in ("wc", "oc"):
-            data_pd = pd.read_csv(f"data/{schema if '.' not in schema else schema.split('.')[0]}/{setting}.csv")
+            data_pd = pd.read_csv(f"data/{FLAGS.split}/{setting}.csv")
             train_pd, val_pd = train_test_split(data_pd, test_size=test_size, random_state=FLAGS.seed+split_num)
             train_pd, dev_pd = train_test_split(train_pd, test_size=val_pd.shape[0], random_state=FLAGS.seed+split_num)
             train_pd.to_csv(f"{path_name}/{split_num}/{setting.replace('w','i')}.train.csv")
@@ -115,11 +120,37 @@ def train(with_context, verbose=1, splits_path="data/standard/random_ten", the_s
                     elif FLAGS.model_name == "BERT:INC2":
                         print("Training BERT with a context-reading mechanism added.")
                         model = classifiers.BERT_MLP_CA(patience=patience, lr=lr, epochs=FLAGS.epochs, session=sess)
+                    elif FLAGS.model_name == "BERT:CCTK":
+                        print("Training BERT over CCTK")
+                        model = classifiers.BERT_MLP(patience=patience, lr=lr, epochs=FLAGS.epochs, session=sess)
+                        cctk = pd.read_csv("data/CCTK.csv.zip", nrows=100000)
+                        x_train_pd, x_dev_pd = train_test_split(
+                            pd.DataFrame({"text": cctk.comment_text, "label": cctk.target.apply(round)}),
+                            test_size=0.1,
+                            random_state=FLAGS.seed
+                        )
+                        model.fit(train=x_train_pd,
+                                  dev=x_dev_pd,
+                                  class_weights=class_weights,
+                                  pretrained_embeddings=embeddings)
+                        cctk_preds_pd = pd.DataFrame()
+                        for i in range(10):
+                            x_val_pd = pd.read_csv(f"data/standard.622/random_ten/{i}/ic.val.csv")
+                            gold, predictions = x_val_pd.label.to_numpy(), model.predict(x_val_pd).flatten()
+                            score = roc_auc_score(gold, predictions)
+                            print(f"ROC-AUC@{i}: {score}")
+                            cctk_preds_pd[f"MCCV_{i}"] = predictions
+                        cctk_preds_pd.to_csv("cctk.csv")
+                        model.model.save_weights("bert_weights.h5")
                     else:
                         sys.exit("ERROR: Not implemented yet...")
 
         print(f"Training {model.name}...")
-        model.fit(train=train_pd, dev=dev_pd, class_weights=class_weights, pretrained_embeddings=embeddings)
+        if "BERT" in FLAGS.model_name:
+            model.fit(train=train_pd, dev=dev_pd, bert_weights=FLAGS.bert_weights, class_weights=class_weights, pretrained_embeddings=embeddings)
+        else:
+            model.fit(train=train_pd, dev=dev_pd, class_weights=class_weights, pretrained_embeddings=embeddings)
+
         gold, predictions = val_pd.label.to_numpy(), model.predict(val_pd).flatten()
         score = roc_auc_score(gold, predictions)
         print("Evaluating...")
@@ -134,25 +165,25 @@ def train(with_context, verbose=1, splits_path="data/standard/random_ten", the_s
     return score, predictions, model
 
 
-def repeat_experiment(with_context, steps):
+def repeat_experiment():
     scores = []
     predictions_pd = pd.DataFrame()
     model_name = ""
-    splits_path = f"data/{FLAGS.schema}/{FLAGS.splits_version}"
+    splits_path = f"data/{FLAGS.split}/{FLAGS.splits_version}"
     if not os.path.exists(splits_path):
         sys.exit(f"ERROR: {splits_path} is empty! Make sure the desired dataset is successfully created.")
     FLAGS.experiment_version_name += "." + FLAGS.schema
     os.mkdir(FLAGS.experiment_version_name)
-    for i in range(steps):
+    for i in range(FLAGS.repeat):
         print(f"REPETITION: {i}")
-        score, predictions, model = train(with_context, splits_path=splits_path, the_split_to_use=i)
+        score, predictions, model = train(FLAGS.with_context_data, splits_path=splits_path, the_split_to_use=i)
         scores.append(score)
         predictions_pd[f"split{i}"] = predictions
         model_name = model.name
     return np.mean(scores), sem(scores), predictions_pd, model_name # the last model used - the same for all runs
 
 def model_train(at_split):
-    splits_path = f"data/{FLAGS.schema}/{FLAGS.splits_version}"
+    splits_path = f"data/{FLAGS.split}/{FLAGS.splits_version}"
     score, predictions, model = train(FLAGS.with_context_data,
                                       FLAGS.model_name,
                                       splits_path=splits_path,
@@ -163,18 +194,22 @@ def model_train(at_split):
 def main(argv):
 
     if FLAGS.create_random_splits>0:
+        # Prepare the data for Monte Carlo k-fold Cross Validation
         print(f"Splitting the data randomly into {FLAGS.create_random_splits} splits")
         split_to_random_sets(splits=FLAGS.create_random_splits, schema=FLAGS.schema, version_name=FLAGS.splits_version)
     elif FLAGS.create_balanced_datasets:
-        for i in range(10):
-            create_balanced_datasets(f"data/{FLAGS.schema}/{FLAGS.splits_version}/{i}")
+        # Down-sample the splits
+        for i in range(FLAGS.repeat): # recall to set this to the correct value
+            create_balanced_datasets(f"data/{FLAGS.split}/{FLAGS.splits_version}/{i}")
     elif FLAGS.repeat == 0:
-        # first split selected arbitrarily
+        # Run at a single split
         score, predictions = model_train(FLAGS.at_split)
         print(f"{score}")
         pd.DataFrame(predictions).to_csv(f"{FLAGS.model_name}.predictions.csv")
-    else:
-        score, sem, predictions_pd, model_name = repeat_experiment(with_context=FLAGS.with_context_data, steps=FLAGS.repeat)
+    elif FLAGS.repeat > 0:
+        # Perform Monte Carlo Cross Validation
+        # INFO: Recall to set "repeat" to the correct folds number
+        score, sem, predictions_pd, model_name = repeat_experiment()
         predictions_pd.to_csv(f"{FLAGS.experiment_version_name}/{model_name}.predictions.csv")
         print (f"{score} ± {sem}")
 
