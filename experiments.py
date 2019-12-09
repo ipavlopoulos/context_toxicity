@@ -12,7 +12,7 @@ import datetime
 
 FLAGS = flags.FLAGS
 flags.DEFINE_string("model_name", None, "name:OOC' for Out Of Context architecture (or the respective context-aware schema).")  # name , default, help
-flags.DEFINE_boolean("with_context_data", False, "False for context-less training data.")  # name , default, help
+flags.DEFINE_integer("with_context_data", 0, "False for context-less training data.")  # name , default, help
 flags.DEFINE_integer("oversample", 1, "Oversample the positive class, e.g., 99/1 (enter 99)")
 flags.DEFINE_integer("repeat", 0, "Repetitions of the experiment. Default is 0.")
 flags.DEFINE_integer("at_split", 0, "Operate on specific split. Default is 0.")
@@ -21,7 +21,7 @@ flags.DEFINE_integer("confidence_intervals", 1, "Show Confidence Intervals along
 flags.DEFINE_integer("create_random_splits", 0, "Create random splits. Default number is 0, which means: 'do not split'.")
 flags.DEFINE_integer("patience", 3, "Waiting epochs for the best performance. Default is 10.")  # name , default, help
 flags.DEFINE_integer("seed", 42, "The seed to initialise the random state. Default is 42.")
-flags.DEFINE_boolean("create_balanced_datasets", False, "If True, use downsampling to create balanced versions of the original datasets.")
+flags.DEFINE_integer("create_balanced_datasets", 0, "If True, use downsampling to create balanced versions of the original datasets.")
 flags.DEFINE_string("splits_version", "random_ten", "The name of the splits directory. Default is 'random_ten'.")
 flags.DEFINE_string("experiment_version_name", f"version-{datetime.datetime.now().strftime('%d%B%Y-%H%M')}", "The name of the splits directory. Default is 'standard_ten'.")
 flags.DEFINE_string("schema", "balanced", "'standard' for original distributions, 'balanced' for downsampled")
@@ -85,12 +85,12 @@ def split_to_random_sets(splits=10, test_size=0.2, schema="standard", version_na
 
 def train(with_context, verbose=1, splits_path="data/standard/random_ten", the_split_to_use=9):
     print(f"Loading the data... Using the '{splits_path}/{the_split_to_use}' split.")
-    ctx_id = 'i' if with_context else 'o'
+    ctx_id = 'i' if with_context>0 else 'o'
     mod_id = 'balanced.' if "balanced" in FLAGS.schema else ''
     train_pd = pd.read_csv(f"{splits_path}/{the_split_to_use}/{ctx_id}c.train.{mod_id}csv")
     dev_pd = pd.read_csv(f"{splits_path}/{the_split_to_use}/{ctx_id}c.dev.csv")
     val_pd = pd.read_csv(f"{splits_path}/{the_split_to_use}/ic.val.csv")
-
+    print (f"INFO: Mod_id: {mod_id} - CTX_id: {ctx_id}")
     print("Loading the embeddings...")
     class_weights = {0: 1, 1: FLAGS.oversample}
     embeddings = classifiers.load_embeddings_index()
@@ -197,8 +197,9 @@ def main(argv):
         # Prepare the data for Monte Carlo k-fold Cross Validation
         print(f"Splitting the data randomly into {FLAGS.create_random_splits} splits")
         split_to_random_sets(splits=FLAGS.create_random_splits, schema=FLAGS.schema, version_name=FLAGS.splits_version)
-    elif FLAGS.create_balanced_datasets:
+    elif FLAGS.create_balanced_datasets>0:
         # Down-sample the splits
+        print ("Creating balanced versions")
         for i in range(FLAGS.repeat): # recall to set this to the correct value
             create_balanced_datasets(f"data/{FLAGS.split}/{FLAGS.splits_version}/{i}")
     elif FLAGS.repeat == 0:

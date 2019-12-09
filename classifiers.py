@@ -81,7 +81,7 @@ class LSTM_CLF():
 
     def build(self, bias=0):
         inputs1 = Input(shape=(self.max_length,))
-        stack = Embedding(self.vocab_size + 2, 100, mask_zero=True, weights=[self.embedding_matrix], trainable=False)(inputs1)
+        stack = Embedding(self.vocab_size + 2, 100, mask_zero=True, weights=[self.embedding_matrix], trainable=True)(inputs1)
         for i in range(self.stacks):
             stack = Bidirectional(LSTM(self.hidden_size, return_sequences=True))(stack)
         rnn = Bidirectional(LSTM(self.hidden_size, return_sequences=False))(stack)
@@ -126,6 +126,17 @@ class LSTM_CLF():
         predictions = self.model.predict(self.text_process(test.text))
         return predictions
 
+    def save(self):
+        self.model.save_weights(self.name + ".h5")
+        del self.model
+        with open(self.name+".arch", "wb") as out:
+            out.write(pickle.dumps(self))
+        self.model.load_weights(self.name + ".h5")
+
+    def load(self):
+        pickle.load(open(self.name+".arch"))
+        self.build()
+        self.model.load_weights(self.name+".h5")
 
 class LSTM_IC1_CLF(LSTM_CLF):
 
@@ -143,7 +154,7 @@ class LSTM_IC1_CLF(LSTM_CLF):
         :return:
         '''
         target_input = Input(shape=(self.max_length,))
-        stack = Embedding(self.vocab_size + 2, 100, mask_zero=True)(target_input)
+        stack = Embedding(self.vocab_size + 2, 100, mask_zero=True, weights=[self.embedding_matrix], trainable=True)(target_input)
         for i in range(self.stacks):
             stack = LSTM(self.hidden_size, return_sequences=True)(stack)
         target_rnn = Bidirectional(LSTM(self.hidden_size, return_sequences=False))(stack)
@@ -540,7 +551,7 @@ class BERT_MLP_CA(BERT_MLP):
         # add the parent
         parent_input = Input(shape=(self.max_length,), name="parent_input")
         parent_emb = Embedding(self.vocab_size + 2, 100, mask_zero=True,
-                               weights=[self.embedding_matrix], trainable=False)(parent_input)
+                               weights=[self.embedding_matrix], trainable=True)(parent_input)
         # parent_emb = Embedding(self.vocab_size + 2, 100, mask_zero=True)(parent_input)
         parent_rnn = LSTM(128)(parent_emb)
 
