@@ -46,19 +46,21 @@ def load_embeddings_index():
 
 class LSTM_CLF():
     def __init__(self, stacks=0, verbose=1, batch_size=128, n_epochs=100, max_length=512,
-                 loss="binary_crossentropy", monitor_loss="val_loss",
+                 loss="binary_crossentropy", monitor_loss="val_loss", patience=3,
                  prefix="vanilla",
                  hidden_size=128,
+                 word_embedding_size=200,
                  seed=42,
                  no_sigmoid=False):
         tf.compat.v1.set_random_seed(seed)
         np.random.seed(seed)
         self.verbose = verbose
+        self.patience = patience
         self.batch_size = batch_size
         self.early = EarlyStopping(monitor="val_auc",
                                    mode="max",
                                    verbose=1,
-                                   patience=10,
+                                   patience=self.patience,
                                    restore_best_weights=True
                                    )
         self.n_epochs = n_epochs
@@ -67,6 +69,7 @@ class LSTM_CLF():
         self.max_length = max_length
         self.tokenizer = Tokenizer()
         self.loss = loss
+        self.word_embedding_size = word_embedding_size
         self.hidden_size=hidden_size
         self.prefix = prefix
         self.monitor_loss = monitor_loss
@@ -81,7 +84,7 @@ class LSTM_CLF():
 
     def build(self, bias=0):
         inputs1 = Input(shape=(self.max_length,))
-        stack = Embedding(self.vocab_size + 2, 100, mask_zero=True, weights=[self.embedding_matrix], trainable=True)(inputs1)
+        stack = Embedding(self.vocab_size + 2, self.word_embedding_size, mask_zero=True)(inputs1)#, weights=[self.embedding_matrix], trainable=True)(inputs1)
         for i in range(self.stacks):
             stack = Bidirectional(LSTM(self.hidden_size, return_sequences=True))(stack)
         rnn = Bidirectional(LSTM(self.hidden_size, return_sequences=False))(stack)
@@ -141,7 +144,7 @@ class LSTM_CLF():
 class LSTM_IC1_CLF(LSTM_CLF):
 
     def __init__(self, prefix="IC1", **kwargs):
-        super().__init__(**kwargs)
+        super(LSTM_IC1_CLF, self).__init__(**kwargs)
         self.prefix = prefix
 
     def build(self, bias=0):
@@ -154,7 +157,7 @@ class LSTM_IC1_CLF(LSTM_CLF):
         :return:
         '''
         target_input = Input(shape=(self.max_length,))
-        stack = Embedding(self.vocab_size + 2, 100, mask_zero=True, weights=[self.embedding_matrix], trainable=True)(target_input)
+        stack = Embedding(self.vocab_size + 2, 200, mask_zero=True)(target_input)#, weights=[self.embedding_matrix], trainable=True)(target_input)
         for i in range(self.stacks):
             stack = LSTM(self.hidden_size, return_sequences=True)(stack)
         target_rnn = Bidirectional(LSTM(self.hidden_size, return_sequences=False))(stack)
@@ -203,45 +206,6 @@ class LSTM_IC1_CLF(LSTM_CLF):
     def predict(self, test):
         predictions = self.model.predict(self.text_process(test.text, test.parent))
         return predictions
-
-
-class LSTM_IC2_CLF(LSTM_IC1_CLF):
-    def __init__(self, prefix="IC2", **kwargs):
-        super().__init__(**kwargs)
-        self.prefix = prefix
-
-    def build(self, bias=0):
-        '''
-        Stacked RNN on the target text. At each word of the target, the word embedding
-        is concatenated with a representation of the parent text. The representation of
-        the parent text is generated from another RNN.
-        Using the trick from here:
-        https://www.tensorflow.org/tutorials/structured_data/imbalanced_data
-        :return:
-        '''
-        target_input = Input(shape=(self.max_length,))
-        stack = Embedding(self.vocab_size + 2, 100, mask_zero=True)(target_input)
-        parent_input = Input(shape=(self.max_length,))
-        parent_emb = Embedding(self.vocab_size + 2, 100, mask_zero=True)(parent_input)
-        parent_rnn = LSTM(128, return_sequences=False)(parent_emb)
-
-        # Repeat the RNN-encoded parent text and then concat with the target-text words
-        parent_rnn = keras.layers.RepeatVector()(parent_rnn)
-        # stack = keras.layers.merge([stack, parent_rnn], mode="concat")
-        x = concatenate([stack, parent_rnn])
-        #x = keras.layers.Lambda(lambda embedding: K.l2_normalize(embedding, axis=1))(x)
-
-        for i in range(self.stacks):
-            x = Bidirectional(LSTM(self.hidden_size, return_sequences=True))(x)
-        rnn = Bidirectional(LSTM(128, return_sequences=False))(x)
-
-        fnn = Dense(128, activation='tanh')(rnn)
-        fnn = Dense(1, activation='sigmoid', bias_initializer=tf.keras.initializers.Constant(bias))(fnn)
-        self.model = Model(inputs=[target_input, parent_input], outputs=fnn)
-        self.model.compile(loss=self.loss,
-                           optimizer=keras.optimizers.Adam(),
-                           metrics=METRICS)
-
 
 class BERT(tf.keras.layers.Layer):
     """
@@ -347,53 +311,6 @@ class BERT(tf.keras.layers.Layer):
 
     def compute_output_shape(self, input_shape):
         return (input_shape[0], self.output_size)
-
-class DEPRECATED_BERT(tf.keras.layers.Layer):
-
-    def __init__(self, n_fine_tune_top_layers=3, **kwargs):
-        """
-        :n_fine_tune_layers: n for top n layers trainable
-        """
-        self.bert = None
-        self.n_fine_tune_top_layers = n_fine_tune_top_layers
-        self.trainable = True
-        super(BERT, self).__init__(**kwargs)
-
-    def get_config(self):
-        config = super().get_config().copy()
-        config.update({
-            'n_fine_tune_top_layers': self.n_fine_tune_top_layers,
-            'trainable': self.trainable,
-            'bert': self.bert
-        })
-        return config
-
-    def build(self, input_shape):
-        self.bert = hub.Module(BERT_MODEL_PATH, trainable=self.trainable,
-                               name="{}_module".format(self.name))
-        # Remove unused layers and set trainable parameters
-        trainable_vars = [var for var in self.bert.variables
-                          if not ("/cls/" in var.name) and not ("/pooler/" in var.name)]
-
-        # Select how many layers to fine tune
-        if self.n_fine_tune_top_layers > 0:
-            trainable_vars = trainable_vars[-self.n_fine_tune_top_layers:]
-
-        # Add to trainable weights
-        for var in trainable_vars:
-            self._trainable_weights.append(var)
-
-        # Update non-trainable weights
-        for var in self.bert.variables:
-            if var not in self._trainable_weights:
-                self._non_trainable_weights.append(var)
-
-        super(BERT, self).build(input_shape)
-
-    def call(self, inputs):
-        input_ids, input_mask, segment_ids = [K.cast(x, dtype="int32") for x in inputs]
-        inputs = dict(input_ids=input_ids, input_mask=input_mask, segment_ids=segment_ids)
-        return self.bert(inputs=inputs, as_dict=True, signature='tokens')['pooled_output']
 
 
 class BERT_MLP():
@@ -529,11 +446,12 @@ class BERT_MLP():
 
 class BERT_MLP_CA(BERT_MLP):
 
-    def __init__(self, max_length=128, **kwargs):
+    def __init__(self, max_length=128, word_embedding_size=200, **kwargs):
         super(BERT_MLP_CA, self).__init__(**kwargs)
         self.name = f'{"CA"}-b{self.batch_size}.e{self.epochs}.len{self.max_seq_length}.bert'
         self.parent_tokenizer = Tokenizer()
         self.max_length = max_length
+        self.word_embedding_size=word_embedding_size
 
     def load_embeddings(self, pretrained_dict):
         self.embedding_matrix = np.zeros((self.vocab_size + 2, 100))
@@ -550,8 +468,8 @@ class BERT_MLP_CA(BERT_MLP):
 
         # add the parent
         parent_input = Input(shape=(self.max_length,), name="parent_input")
-        parent_emb = Embedding(self.vocab_size + 2, 100, mask_zero=True,
-                               weights=[self.embedding_matrix], trainable=True)(parent_input)
+        parent_emb = Embedding(self.vocab_size + 2, self.word_embedding_size, mask_zero=True)(parent_input)
+                               #weights=[self.embedding_matrix], trainable=True)(parent_input)
         # parent_emb = Embedding(self.vocab_size + 2, 100, mask_zero=True)(parent_input)
         parent_rnn = LSTM(128)(parent_emb)
 

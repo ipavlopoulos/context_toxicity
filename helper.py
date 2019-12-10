@@ -6,6 +6,40 @@ import pandas as pd
 import numpy as np
 from tensorflow.keras.callbacks import Callback
 import logging
+# Following is a dependency on the ssig package:
+#! git clone https://github.com/ipavlopoulos/ssig.git
+from ssig import art
+
+def ca_perspective(n=5):
+    """
+    Evaluate PERSPECTIVE with parent-target concatenated.
+    Scores provided to us.
+    :param n:
+    :return:
+    """
+    c = pd.read_csv("data/c_parenttext.csv")
+    c.set_index(["id"], inplace=True)
+    data = [pd.read_csv(f"data/standard.622/random_ten/{i}/ic.val.csv") for i in range(n)]
+    scores = []
+    for sample in data:
+        sample["ca_score"] = sample["id"].apply(lambda x: c.loc[x].TOXICITY)
+        scores.append(roc_auc_score(sample.label, sample.ca_score))
+    return scores
+
+def persp_vs_capersp(n=5):
+    c = pd.read_csv("data/c_parenttext.csv")
+    c.set_index(["id"], inplace=True)
+    data = [pd.read_csv(f"data/standard.622/random_ten/{i}/ic.val.csv") for i in range(n)]
+    val = pd.concat(data)
+    val.drop_duplicates(["id"], inplace=True)
+    val["ca_score"] = val["id"].apply(lambda x: c.loc[x].TOXICITY)
+    ca_score = roc_auc_score(val.label, val.ca_score)
+    baseline_score = roc_auc_score(val.label, val.api)
+    p = art.compare_systems(gold=val.label.to_list(),
+                            system_predictions=val.ca_score.to_list(),
+                            baseline_predictions=val.api.to_list(),
+                            evaluator=roc_auc_score)
+    return ca_score, baseline_score, p
 
 def rocauc(y_true, y_pred):
     return tf.cond(tf.reduce_max(y_true) == 1,

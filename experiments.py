@@ -9,6 +9,9 @@ import tensorflow as tf
 import os, sys
 import json
 import datetime
+# Following is a dependency on the ssig package:
+#! git clone https://github.com/ipavlopoulos/ssig.git
+from ssig import ci
 
 FLAGS = flags.FLAGS
 flags.DEFINE_string("model_name", None, "name:OOC' for Out Of Context architecture (or the respective context-aware schema).")  # name , default, help
@@ -101,28 +104,27 @@ def train(with_context, verbose=1, splits_path="data/standard/random_ten", the_s
             model = classifiers.LSTM_CLF(prefix=FLAGS.model_name.lower(), verbose=verbose, n_epochs=FLAGS.epochs)
         else:
             if FLAGS.model_name == "RNN:INC1":
-                model = classifiers.LSTM_IC1_CLF(prefix=FLAGS.model_name.lower(), verbose=verbose,  n_epochs=FLAGS.epochs)
+                model = classifiers.LSTM_IC1_CLF(prefix=FLAGS.model_name.lower(), verbose=verbose,  n_epochs=FLAGS.epochs, patience=FLAGS.patience)
             elif FLAGS.model_name == "RNN:INC2":
-                model = classifiers.LSTM_IC2_CLF(prefix=FLAGS.model_name.lower(), verbose=verbose,  n_epochs=FLAGS.epochs)
+                model = classifiers.LSTM_IC2_CLF(prefix=FLAGS.model_name.lower(), verbose=verbose,  n_epochs=FLAGS.epochs, patience=FLAGS.patience)
             elif "RNN" in FLAGS.model_name:
                 print("Not implemented yet...")
             else:
                 if "BERT" in FLAGS.model_name:
                     os.environ['TFHUB_CACHE_DIR'] = 'embeddings'
                     lr = 2e-05
-                    patience = FLAGS.patience
                     if FLAGS.model_name == "BERT:OOC":
                         print("Training BERT with no context mechanism added.")
-                        model = classifiers.BERT_MLP(patience=patience, lr=lr,  epochs=FLAGS.epochs, session=sess)
+                        model = classifiers.BERT_MLP(patience=FLAGS.patience, lr=lr,  epochs=FLAGS.epochs, session=sess)
                     elif FLAGS.model_name == "BERT:INC1":
                         print("Training BERT with parent concatenated to text.")
-                        model = classifiers.BERT_MLP(patience=patience, lr=lr, DATA2_COLUMN="parent", epochs=FLAGS.epochs, session=sess)
+                        model = classifiers.BERT_MLP(patience=FLAGS.patience, lr=lr, DATA2_COLUMN="parent", epochs=FLAGS.epochs, session=sess)
                     elif FLAGS.model_name == "BERT:INC2":
                         print("Training BERT with a context-reading mechanism added.")
-                        model = classifiers.BERT_MLP_CA(patience=patience, lr=lr, epochs=FLAGS.epochs, session=sess)
+                        model = classifiers.BERT_MLP_CA(patience=FLAGS.patience, lr=lr, epochs=FLAGS.epochs, session=sess)
                     elif FLAGS.model_name == "BERT:CCTK":
                         print("Training BERT over CCTK")
-                        model = classifiers.BERT_MLP(patience=patience, lr=lr, epochs=FLAGS.epochs, session=sess)
+                        model = classifiers.BERT_MLP(patience=FLAGS.patience, lr=lr, epochs=FLAGS.epochs, session=sess)
                         cctk = pd.read_csv("data/CCTK.csv.zip", nrows=100000)
                         x_train_pd, x_dev_pd = train_test_split(
                             pd.DataFrame({"text": cctk.comment_text, "label": cctk.target.apply(round)}),
@@ -157,9 +159,6 @@ def train(with_context, verbose=1, splits_path="data/standard/random_ten", the_s
         print(f"ROC-AUC: {score}")
         print(f"STATS: toxicity (%) at predicted: {np.mean(predictions)} vs at gold: {np.mean(gold)}")
         if FLAGS.confidence_intervals !=0:
-            # WARNING: dependency on the ssig package
-            # git clone https://github.com/ipavlopoulos/ssig.git
-            from ssig import ci
             score, intervals = ci.AUC(gold_truth=list(gold), predictions=list(predictions)).evaluate()
             print(f"ROC-AUC ± CIs: {score} ± {intervals}")
     return score, predictions, model
