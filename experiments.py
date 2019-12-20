@@ -11,7 +11,7 @@ import json
 import datetime
 # Following is a dependency on the ssig package:
 #! git clone https://github.com/ipavlopoulos/ssig.git
-from ssig import ci
+from .ssig import ci
 
 FLAGS = flags.FLAGS
 flags.DEFINE_string("model_name", None, "name:OOC' for Out Of Context architecture (or the respective context-aware schema).")  # name , default, help
