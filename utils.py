@@ -8,7 +8,7 @@ from tensorflow.keras.callbacks import Callback
 import logging
 # Following is a dependency on the ssig package:
 #! git clone https://github.com/ipavlopoulos/ssig.git
-from .ssig import art
+from ssig import art
 
 
 def ca_perspective(n=5):
