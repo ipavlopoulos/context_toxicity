@@ -10,6 +10,7 @@ import logging
 #! git clone https://github.com/ipavlopoulos/ssig.git
 from ssig import art
 
+
 def ca_perspective(n=5):
     """
     Evaluate PERSPECTIVE with parent-target concatenated.
@@ -26,6 +27,7 @@ def ca_perspective(n=5):
         scores.append(roc_auc_score(sample.label, sample.ca_score))
     return scores
 
+
 def persp_vs_capersp(n=5):
     c = pd.read_csv("data/c_parenttext.csv")
     c.set_index(["id"], inplace=True)
@@ -41,11 +43,13 @@ def persp_vs_capersp(n=5):
                             evaluator=roc_auc_score)
     return ca_score, baseline_score, p
 
+
 def rocauc(y_true, y_pred):
     return tf.cond(tf.reduce_max(y_true) == 1,
                    tf.keras.metrics.AUC(y_true, y_pred),
                    lambda x: 1.0
                    )
+
 
 class CallbackAUC(Callback):
     def __init__(self, validation_data):
@@ -72,6 +76,7 @@ class CallbackAUC(Callback):
 
     def on_batch_end(self, batch, logs={}):
         return
+
 
 class InputExample(object):
     """A single training/test example for simple sequence classification."""
@@ -306,6 +311,7 @@ def convert_examples_to_features(examples, label_list, max_seq_length,
 
         features.append(feature)
     return features
+
 
 def perspective_evaluate(split=0, schema="standard", mode="val", setting="ic"):
     ic = pd.read_csv(f"data/{schema}/random_ten/{split}/{setting}.{mode}.csv")
