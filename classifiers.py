@@ -8,7 +8,6 @@ from tensorflow.keras.models import Model
 from tensorflow.keras.preprocessing import sequence
 from tensorflow.keras.preprocessing.text import Tokenizer
 from tensorflow.keras.layers import concatenate
-import helper
 import time
 import numpy as np
 import pandas as pd
@@ -16,6 +15,7 @@ import tensorflow as tf
 import tensorflow_hub as hub
 from tensorflow.keras import backend as K
 from bert import tokenization
+from helper import InputExample, convert_examples_to_features
 from sklearn.metrics import *
 import pickle
 
@@ -379,11 +379,11 @@ class BERT_MLP():
         return (np.array(input_ids), np.array(input_masks), np.array(segment_ids), np.array(labels).reshape(-1, 1),)
 
     def to_bert_input(self, dataset_pd):
-        x_input = dataset_pd.apply(lambda x: helper.InputExample(guid=None,
+        x_input = dataset_pd.apply(lambda x: InputExample(guid=None,
                                                           text_a=x[self.DATA_COLUMN],
                                                           text_b=x[self.DATA2_COLUMN] if self.DATA2_COLUMN else None,
                                                           label=x[self.LABEL_COLUMN]), axis=1)
-        x_features = helper.convert_examples_to_features(x_input,
+        x_features = convert_examples_to_features(x_input,
                                                   self.label_list,
                                                   self.max_seq_length,
                                                   self.tokenizer)
