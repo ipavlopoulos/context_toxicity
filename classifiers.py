@@ -51,7 +51,7 @@ class LSTM_CLF():
                  hidden_size=128,
                  word_embedding_size=200,
                  seed=42,
-                 augmented_vocabulary = True,
+                 augmented_vocabulary = False,
                  no_sigmoid=False):
         tf.compat.v1.set_random_seed(seed)
         np.random.seed(seed)
