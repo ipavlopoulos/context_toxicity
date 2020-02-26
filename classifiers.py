@@ -51,10 +51,12 @@ class LSTM_CLF():
                  hidden_size=128,
                  word_embedding_size=200,
                  seed=42,
+                 augmented_vocabulary = True,
                  no_sigmoid=False):
         tf.compat.v1.set_random_seed(seed)
         np.random.seed(seed)
         self.verbose = verbose
+        self.augmented_vocabulary = augmented_vocabulary
         self.patience = patience
         self.batch_size = batch_size
         self.early = EarlyStopping(monitor="val_auc",
@@ -105,7 +107,8 @@ class LSTM_CLF():
         return x1
 
     def fit(self, train, dev, pretrained_embeddings, class_weights={0: 1, 1: 1}):
-        self.tokenizer.fit_on_texts(train.text)
+        texts = train.text if not self.augmented_vocabulary else train.text + train.parent
+        self.tokenizer.fit_on_texts(texts)
         self.vocab_size = len(self.tokenizer.word_index) + 1
         print('Vocabulary Size: %d' % self.vocab_size)
         X, VX = self.text_process(train.text), self.text_process(dev.text)
@@ -142,22 +145,20 @@ class LSTM_CLF():
         self.model.load_weights(self.name+".h5")
 
 class LSTM_IC1_CLF(LSTM_CLF):
+    # RNN classification of the target text, with context representation concatenated.
+    # The resulting representation of the target text is concatenated with the representation
+    # of the parent text. The parent text representation comes from a single-level Bidirectional RNN.
+    # The target text representation comes from a stacked LSTM.
 
     def __init__(self, prefix="IC1", **kwargs):
         super(LSTM_IC1_CLF, self).__init__(**kwargs)
         self.prefix = prefix
 
     def build(self, bias=0):
-        '''
-        RNN classification of the target text:
-        The resulting representation of the target text is concatenated with the
-        representation of the parent text.
-        The parent text representation comes from a single-level Bidirectional RNN.
-        The target text representation comes from a stacked LSTM.
-        :return:
-        '''
         target_input = Input(shape=(self.max_length,))
-        stack = Embedding(self.vocab_size + 2, 200, mask_zero=True)(target_input)#, weights=[self.embedding_matrix], trainable=True)(target_input)
+        stack = Embedding(self.vocab_size + 2, 200, mask_zero=True)(target_input)
+        # stack = Embedding(self.vocab_size + 2, 200, mask_zero=True, weights=[self.embedding_matrix],
+        #                  trainable=True)(target_input)
         for i in range(self.stacks):
             stack = LSTM(self.hidden_size, return_sequences=True)(stack)
         target_rnn = Bidirectional(LSTM(self.hidden_size, return_sequences=False))(stack)
@@ -184,7 +185,8 @@ class LSTM_IC1_CLF(LSTM_CLF):
         return [target_x, parent_x]
 
     def fit(self, train, dev, pretrained_embeddings, class_weights={0: 1, 1: 1}):
-        self.tokenizer.fit_on_texts(train.text) # for fairness, only fit on target texts
+        texts = train.text if not self.augmented_vocabulary else train.text + train.parent
+        self.tokenizer.fit_on_texts(texts)
         self.vocab_size = len(self.tokenizer.word_index) + 1
         print('Vocabulary Size: %d' % self.vocab_size)
         X, VX = self.text_process(train.text, train.parent), self.text_process(dev.text, dev.parent)
