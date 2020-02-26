@@ -1,6 +1,6 @@
 import tensorflow.keras as keras
 from tensorflow.keras.callbacks import EarlyStopping
-from tensorflow.keras.layers import Dense, Permute, RepeatVector
+from tensorflow.keras.layers import Dense, Permute, RepeatVector, Lambda
 from tensorflow.keras.layers import Embedding
 from tensorflow.keras.layers import GRU, LSTM, Bidirectional, TimeDistributed
 from tensorflow.keras.layers import Input
@@ -284,6 +284,86 @@ class RnnCi(RNN):
     def predict(self, test):
         predictions = self.model.predict(self.text_process(test.text, test.parent))
         return predictions
+
+class RnnCa(RNN):
+
+    def __init__(self, prefix="CI", **kwargs):
+        """
+        RNN classification of the target text with the parent text representation (context)
+        affecting the target RNN through an attention mechanism (Context Attention).
+        :param prefix:
+        :param kwargs:
+        """
+        super(RnnCi, self).__init__(**kwargs)
+        self.prefix = prefix
+
+    def build(self, bias=0):
+        target_input = Input(shape=(self.max_length,))
+        stack = Embedding(self.vocab_size + 2, 200, mask_zero=True)(target_input)
+        for i in range(self.stacks):
+            stack = LSTM(self.hidden_size, return_sequences=True)(stack)
+        target_rnn = Bidirectional(LSTM(self.hidden_size, return_sequences=False))(stack)
+
+        parent_input = Input(shape=(self.max_length,))
+        parent_emb = Embedding(self.vocab_size + 2, 200, mask_zero=True)(parent_input)
+        parent_rnn = LSTM(200, return_sequences=False)(parent_emb)
+
+        # Attention mechanism
+        att = keras.layers.wrappers.TimeDistributed(
+            Dense(self.hidden_attention_layers[0], activation='relu',
+                  W_regularizer=keras.regularizers.WeightRegularizer(l2=self.l2)))(target_rnn)
+        for h in self.hidden_attention_layers[1:]:
+            att = keras.layers.wrappers.TimeDistributed(
+                Dense(h, activation='relu', W_regularizer=keras.regularizers.WeightRegularizer(l2=self.l2)))(att)
+        att = keras.layers.wrappers.TimeDistributed(Dense(1, activation=None))(att)
+        att = keras.layers.Flatten()(att)
+        att = keras.layers.Activation('softmax')(att)
+        att = keras.layers.core.RepeatVector(self.hidden_size)(att)
+        att = keras.layers.core.Permute([2, 1])(att)
+        att_c = keras.layers.core.RepeatVector(self.hidden_size)(parent_rnn)
+        att_c = keras.layers.core.Permute([2, 1])(att_c)
+        ax = keras.layers.merge([att, att_c, target_rnn], mode='mul')
+        ax = Lambda(lambda x: K.sum(x, axis=1))(ax)
+
+        fnn = Dense(128, activation='tanh')(ax)
+        fnn = Dense(1, activation='sigmoid', bias_initializer=tf.keras.initializers.Constant(bias))(fnn)
+        self.model = Model(inputs=[target_input, parent_input], outputs=fnn)
+        self.model.compile(loss=self.loss,
+                           optimizer=keras.optimizers.Adam(learning_rate=self.lr),
+                           metrics=METRICS)
+
+    def text_process(self, texts, parents):
+        target_x = self.tokenizer.texts_to_sequences(texts.to_numpy())
+        target_x = sequence.pad_sequences(target_x, maxlen=self.max_length)  # padding
+        parent_x = self.tokenizer.texts_to_sequences(parents.to_numpy())
+        parent_x = sequence.pad_sequences(parent_x, maxlen=self.max_length)  # padding
+        return [target_x, parent_x]
+
+    def fit(self, train, dev, pretrained_embeddings, class_weights={0: 1, 1: 1}):
+        texts = train.text if not self.augmented_vocabulary else train.text + train.parent
+        self.tokenizer.fit_on_texts(texts)
+        self.vocab_size = len(self.tokenizer.word_index) + 1
+        print('Vocabulary Size: %d' % self.vocab_size)
+        X, VX = self.text_process(train.text, train.parent), self.text_process(dev.text, dev.parent)
+        Y, VY = train.label.to_numpy(), dev.label.to_numpy()
+        self.load_embeddings(pretrained_embeddings)
+        pos = sum(Y)
+        neg = len(Y) - pos
+        bias = np.log(pos / neg)
+        self.build(bias=bias)
+        self.model_show()
+        self.history = self.model.fit(X, Y,
+                                      validation_data=(VX, VY),
+                                      epochs=self.n_epochs,
+                                      batch_size=self.batch_size,
+                                      verbose=self.verbose,
+                                      callbacks=[self.early],
+                                      class_weight=class_weights)
+
+    def predict(self, test):
+        predictions = self.model.predict(self.text_process(test.text, test.parent))
+        return predictions
+
 
 class BERT(tf.keras.layers.Layer):
     """
