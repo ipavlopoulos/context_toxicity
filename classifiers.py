@@ -235,10 +235,10 @@ class RnnCi(RNN):
         #                  trainable=True)(target_input)
 
         parent_input = Input(shape=(self.max_length,))
-        parent_emb = Embedding(self.vocab_size + 2, 100, mask_zero=True)(parent_input)
-        parent_rnn = LSTM(self.hidden_size, return_sequences=False)(parent_emb)
+        parent_emb = Embedding(self.vocab_size + 2, 200, mask_zero=True)(parent_input)
+        parent_rnn = LSTM(200, return_sequences=False)(parent_emb)
 
-        ci = Reshape((self.max_length,))(parent_rnn)
+        ci = Reshape((self.max_length,200,))(parent_rnn)
         # Concatenate the context-as-input and the word embedding
         stack = concatenate([ci, stack])
 
