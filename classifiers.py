@@ -240,7 +240,7 @@ class RnnCi(RNN):
 
         ci = Reshape((self.max_length,))(parent_rnn)
         # Concatenate the context-as-input and the word embedding
-        stack = Merge([ci, stack], mode="concat")
+        stack = concatenate([ci, stack])
 
         for i in range(self.stacks):
             stack = LSTM(self.hidden_size, return_sequences=True)(stack)
