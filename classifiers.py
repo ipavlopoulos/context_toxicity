@@ -1,6 +1,6 @@
 import tensorflow.keras as keras
 from tensorflow.keras.callbacks import EarlyStopping
-from tensorflow.keras.layers import Dense, Reshape, Merge
+from tensorflow.keras.layers import Dense, Reshape
 from tensorflow.keras.layers import Embedding
 from tensorflow.keras.layers import GRU, LSTM, Bidirectional, TimeDistributed
 from tensorflow.keras.layers import Input
