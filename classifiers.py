@@ -51,13 +51,13 @@ class LSTM_CLF():
                  hidden_size=128,
                  word_embedding_size=200,
                  seed=42,
-                 lr=10e-3,
+                 learning_rate=0.001,
                  augmented_vocabulary=True,
                  no_sigmoid=False):
         tf.compat.v1.set_random_seed(seed)
         np.random.seed(seed)
         self.verbose = verbose
-        self.lr=lr
+        self.lr=learning_rate
         self.augmented_vocabulary = augmented_vocabulary
         self.patience = patience
         self.batch_size = batch_size
