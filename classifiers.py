@@ -1,13 +1,13 @@
 import tensorflow.keras as keras
 from tensorflow.keras.callbacks import EarlyStopping
-from tensorflow.keras.layers import Dense, Reshape
+from tensorflow.keras.layers import Dense, Permute, RepeatVector
 from tensorflow.keras.layers import Embedding
 from tensorflow.keras.layers import GRU, LSTM, Bidirectional, TimeDistributed
 from tensorflow.keras.layers import Input
 from tensorflow.keras.models import Model
 from tensorflow.keras.preprocessing import sequence
 from tensorflow.keras.preprocessing.text import Tokenizer
-from tensorflow.keras.layers import concatenate
+from tensorflow.keras.layers import concatenate, repeat
 import time
 import numpy as np
 import pandas as pd
@@ -237,8 +237,8 @@ class RnnCi(RNN):
         parent_input = Input(shape=(self.max_length,))
         parent_emb = Embedding(self.vocab_size + 2, 200, mask_zero=True)(parent_input)
         parent_rnn = LSTM(200, return_sequences=False)(parent_emb)
-
-        ci = Reshape((self.max_length,200,))(parent_rnn)
+        ci = RepeatVector(self.max_length)(parent_rnn)
+        #ci = Permute([2,1])(ci)
         # Concatenate the context-as-input and the word embedding
         stack = concatenate([ci, stack])
 
