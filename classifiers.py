@@ -51,11 +51,13 @@ class LSTM_CLF():
                  hidden_size=128,
                  word_embedding_size=200,
                  seed=42,
+                 lr=10e-3,
                  augmented_vocabulary=True,
                  no_sigmoid=False):
         tf.compat.v1.set_random_seed(seed)
         np.random.seed(seed)
         self.verbose = verbose
+        self.lr=lr
         self.augmented_vocabulary = augmented_vocabulary
         self.patience = patience
         self.batch_size = batch_size
@@ -95,7 +97,7 @@ class LSTM_CLF():
         fnn = Dense(1, activation='sigmoid', bias_initializer=tf.keras.initializers.Constant(bias))(fnn)
         self.model = Model(inputs=inputs1, outputs=fnn)
         self.model.compile(loss=self.loss,
-                           optimizer=keras.optimizers.Adam(),
+                           optimizer=keras.optimizers.Adam(learning_rate=self.lr),
                            metrics=METRICS)
 
     def model_show(self):
@@ -174,7 +176,7 @@ class LSTM_IC1_CLF(LSTM_CLF):
         fnn = Dense(1, activation='sigmoid', bias_initializer=tf.keras.initializers.Constant(bias))(fnn)
         self.model = Model(inputs=[target_input, parent_input], outputs=fnn)
         self.model.compile(loss=self.loss,
-                           optimizer=keras.optimizers.Adam(),
+                           optimizer=keras.optimizers.Adam(learning_rate=self.lr),
                            metrics=METRICS)
 
     def text_process(self, texts, parents):
@@ -430,7 +432,7 @@ class BERT_MLP():
     def create_tokenizer_from_hub_module(self):
         bert_module = hub.Module(BERT_MODEL_PATH)
         tokenization_info = bert_module(signature="tokenization_info", as_dict=True)
-        vocab_file, do_lower_case = self.session.run([tokenization_info["vocab_file"],tokenization_info["do_lower_case"]])
+        vocab_file, do_lower_case = self.session.run([tokenization_info["vocab_file"], tokenization_info["do_lower_case"]])
         return tokenization.FullTokenizer(vocab_file=vocab_file, do_lower_case=do_lower_case)
 
     def initialise_vars(self):
