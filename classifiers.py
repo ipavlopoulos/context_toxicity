@@ -1,6 +1,6 @@
 import tensorflow.keras as keras
 from tensorflow.keras.callbacks import EarlyStopping
-from tensorflow.keras.layers import Dense, Reshape
+from tensorflow.keras.layers import Dense, Reshape, Merge
 from tensorflow.keras.layers import Embedding
 from tensorflow.keras.layers import GRU, LSTM, Bidirectional, TimeDistributed
 from tensorflow.keras.layers import Input
@@ -240,7 +240,7 @@ class RnnCi(RNN):
 
         ci = Reshape((self.max_length,))(parent_rnn)
         # Concatenate the context-as-input and the word embedding
-        stack = keras.layers.merge([ci, stack], mode="concat")
+        stack = Merge([ci, stack], mode="concat")(ci)
 
         for i in range(self.stacks):
             stack = LSTM(self.hidden_size, return_sequences=True)(stack)
