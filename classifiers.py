@@ -7,7 +7,7 @@ from tensorflow.keras.layers import Input
 from tensorflow.keras.models import Model
 from tensorflow.keras.preprocessing import sequence
 from tensorflow.keras.preprocessing.text import Tokenizer
-from tensorflow.keras.layers import concatenate, repeat
+from tensorflow.keras.layers import concatenate
 import time
 import numpy as np
 import pandas as pd
