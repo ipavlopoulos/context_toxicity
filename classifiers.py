@@ -44,7 +44,7 @@ def load_embeddings_index():
 
 
 
-class LSTM_CLF():
+class RNN():
     def __init__(self, stacks=0, verbose=1, batch_size=128, n_epochs=100, max_length=512,
                  loss="binary_crossentropy", monitor_loss="val_loss", patience=3,
                  prefix="vanilla",
@@ -146,14 +146,18 @@ class LSTM_CLF():
         self.build()
         self.model.load_weights(self.name+".h5")
 
-class LSTM_IC1_CLF(LSTM_CLF):
-    # RNN classification of the target text, with context representation concatenated.
-    # The resulting representation of the target text is concatenated with the representation
-    # of the parent text. The parent text representation comes from a single-level Bidirectional RNN.
-    # The target text representation comes from a stacked LSTM.
+class RnnCh(RNN):
 
-    def __init__(self, prefix="IC1", **kwargs):
-        super(LSTM_IC1_CLF, self).__init__(**kwargs)
+    def __init__(self, prefix="CH", **kwargs):
+        """
+        RNN classification of the target text, with the parent comment parsed separately (different RNN)
+        and concatenated before the classification layer on top.
+        The parent text representation comes from a Bidirectional RNN.
+        The target text representation comes from a stacked or not biderectional RNN (LSTM/GRU).
+        :param prefix:
+        :param kwargs:
+        """
+        super(RnnCh, self).__init__(**kwargs)
         self.prefix = prefix
 
     def build(self, bias=0):
@@ -173,6 +177,76 @@ class LSTM_IC1_CLF(LSTM_CLF):
         #x = keras.layers.Lambda(lambda embedding: K.l2_normalize(embedding, axis=1))(x)
 
         fnn = Dense(128, activation='tanh')(x)
+        fnn = Dense(1, activation='sigmoid', bias_initializer=tf.keras.initializers.Constant(bias))(fnn)
+        self.model = Model(inputs=[target_input, parent_input], outputs=fnn)
+        self.model.compile(loss=self.loss,
+                           optimizer=keras.optimizers.Adam(learning_rate=self.lr),
+                           metrics=METRICS)
+
+    def text_process(self, texts, parents):
+        target_x = self.tokenizer.texts_to_sequences(texts.to_numpy())
+        target_x = sequence.pad_sequences(target_x, maxlen=self.max_length)  # padding
+        parent_x = self.tokenizer.texts_to_sequences(parents.to_numpy())
+        parent_x = sequence.pad_sequences(parent_x, maxlen=self.max_length)  # padding
+        return [target_x, parent_x]
+
+    def fit(self, train, dev, pretrained_embeddings, class_weights={0: 1, 1: 1}):
+        texts = train.text if not self.augmented_vocabulary else train.text + train.parent
+        self.tokenizer.fit_on_texts(texts)
+        self.vocab_size = len(self.tokenizer.word_index) + 1
+        print('Vocabulary Size: %d' % self.vocab_size)
+        X, VX = self.text_process(train.text, train.parent), self.text_process(dev.text, dev.parent)
+        Y, VY = train.label.to_numpy(), dev.label.to_numpy()
+        self.load_embeddings(pretrained_embeddings)
+        pos = sum(Y)
+        neg = len(Y)-pos
+        bias = np.log(pos/neg)
+        self.build(bias=bias)
+        self.model_show()
+        self.history = self.model.fit(X, Y,
+                                      validation_data=(VX, VY),
+                                      epochs=self.n_epochs,
+                                      batch_size=self.batch_size,
+                                      verbose=self.verbose,
+                                      callbacks=[self.early],
+                                      class_weight=class_weights)
+
+    def predict(self, test):
+        predictions = self.model.predict(self.text_process(test.text, test.parent))
+        return predictions
+
+
+class RnnCi(RNN):
+
+    def __init__(self, prefix="CI", **kwargs):
+        """
+        RNN classification of the target text with the parent text (context)
+        presented at each input of the target RNN (Context as Input).
+        :param prefix:
+        :param kwargs:
+        """
+        super(RnnCi, self).__init__(**kwargs)
+        self.prefix = prefix
+
+    def build(self, bias=0):
+        target_input = Input(shape=(self.max_length,))
+        stack = Embedding(self.vocab_size + 2, 200, mask_zero=True)(target_input)
+        # stack = Embedding(self.vocab_size + 2, 200, mask_zero=True, weights=[self.embedding_matrix],
+        #                  trainable=True)(target_input)
+
+        parent_input = Input(shape=(self.max_length,))
+        parent_emb = Embedding(self.vocab_size + 2, 100, mask_zero=True)(parent_input)
+        parent_rnn = LSTM(self.hidden_size, return_sequences=False)(parent_emb)
+
+        ci = keras.layers.core.Reshape((self.max_length,))(parent_rnn)
+        # Concatenate the context-as-input and the word embedding
+        stack = keras.layers.merge([ci, stack], mode="concat")
+
+        for i in range(self.stacks):
+            stack = LSTM(self.hidden_size, return_sequences=True)(stack)
+        target_rnn = Bidirectional(LSTM(self.hidden_size, return_sequences=False))(stack)
+
+        fnn = Dense(128, activation='tanh')(target_rnn)
         fnn = Dense(1, activation='sigmoid', bias_initializer=tf.keras.initializers.Constant(bias))(fnn)
         self.model = Model(inputs=[target_input, parent_input], outputs=fnn)
         self.model.compile(loss=self.loss,

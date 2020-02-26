@@ -101,10 +101,10 @@ def train(with_context, verbose=1, splits_path="data/standard/random_ten", the_s
     print("Creating the model...")
     with tf.compat.v1.Session() as sess:
         if FLAGS.model_name == "RNN:OOC":
-            model = classifiers.LSTM_CLF(prefix=FLAGS.model_name.lower(), verbose=verbose, n_epochs=FLAGS.epochs)
+            model = classifiers.RNN(prefix=FLAGS.model_name.lower(), verbose=verbose, n_epochs=FLAGS.epochs)
         else:
             if FLAGS.model_name == "RNN:INC1":
-                model = classifiers.LSTM_IC1_CLF(prefix=FLAGS.model_name.lower(), verbose=verbose,  n_epochs=FLAGS.epochs, patience=FLAGS.patience)
+                model = classifiers.RnnCh(prefix=FLAGS.model_name.lower(), verbose=verbose, n_epochs=FLAGS.epochs, patience=FLAGS.patience)
             elif FLAGS.model_name == "RNN:INC2":
                 model = classifiers.LSTM_IC2_CLF(prefix=FLAGS.model_name.lower(), verbose=verbose,  n_epochs=FLAGS.epochs, patience=FLAGS.patience)
             elif "RNN" in FLAGS.model_name:
