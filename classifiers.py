@@ -15,7 +15,7 @@ import tensorflow as tf
 import tensorflow_hub as hub
 from tensorflow.keras import backend as K
 from bert import tokenization
-from utils import InputExample, convert_examples_to_features
+from .utils import InputExample, convert_examples_to_features
 from sklearn.metrics import *
 
 BERT_MODEL_PATH = "https://tfhub.dev/google/bert_cased_L-12_H-768_A-12/1"
