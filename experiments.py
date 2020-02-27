@@ -7,14 +7,10 @@ from sklearn.metrics import *
 from scipy.stats import sem
 import tensorflow as tf
 import os, sys
-import json
 import datetime
-# Following is a dependency on the ssig package:
-#! git clone https://github.com/ipavlopoulos/ssig.git
-from ssig import ci
 
 FLAGS = flags.FLAGS
-flags.DEFINE_string("model_name", None, "name:OOC' for Out Of Context architecture (or the respective context-aware schema).")  # name , default, help
+flags.DEFINE_string("model_name", None, "One of: ci, ch, ca, or none")  # name , default, help
 flags.DEFINE_integer("with_context_data", 0, "False for context-less training data.")  # name , default, help
 flags.DEFINE_integer("oversample", 1, "Oversample the positive class, e.g., 99/1 (enter 99)")
 flags.DEFINE_integer("repeat", 0, "Repetitions of the experiment. Default is 0.")
@@ -30,6 +26,11 @@ flags.DEFINE_string("experiment_version_name", f"version-{datetime.datetime.now(
 flags.DEFINE_string("schema", "balanced", "'standard' for original distributions, 'balanced' for downsampled")
 flags.DEFINE_string("split", "standard.622", "'standard' for 80/10/10 split, 'standard.622' for 60/20/20 split")
 flags.DEFINE_string("bert_weights", None, "Load and use the weights of a pre-trained BERT.")
+
+CONTEXT_NONE = "none"
+CONTEXT_INPUT = "ci"
+CONTEXT_ATTENTION = "ca"
+CONTEXT_HIERARCHICAL = "ch"
 
 def evaluate_perspective(dataset_path="data/standard/random_ten", splits=10):
     scores = []
@@ -100,52 +101,58 @@ def train(with_context, verbose=1, splits_path="data/standard/random_ten", the_s
 
     print("Creating the model...")
     with tf.compat.v1.Session() as sess:
-        if FLAGS.model_name == "RNN:OOC":
-            model = classifiers.RNN(prefix=FLAGS.model_name.lower(), verbose=verbose, n_epochs=FLAGS.epochs)
+        lr = 2e-05
+        if FLAGS.model_name.lower() == CONTEXT_NONE:
+            print("Training RNN with no context presented.")
+            model = classifiers.RNN(learning_rate=lr, prefix=FLAGS.model_name.lower(), verbose=verbose, n_epochs=FLAGS.epochs)
+        elif FLAGS.model_name.lower() == CONTEXT_HIERARCHICAL:
+            print("Training RNN with context (represented through another RNN) concatenated with the target.")
+            model = classifiers.RnnCh(learning_rate=lr, prefix=FLAGS.model_name.lower(), verbose=verbose, n_epochs=FLAGS.epochs, patience=FLAGS.patience)
+        elif FLAGS.model_name.lower() == CONTEXT_INPUT:
+            print("Training RNN with context concatenated with word embeddings.")
+            model = classifiers.RnnCi(learning_rate=lr, prefix=FLAGS.model_name.lower(), verbose=verbose,  n_epochs=FLAGS.epochs, patience=FLAGS.patience)
+        elif FLAGS.model_name.lower() == CONTEXT_ATTENTION:
+            print("Training RNN with context used to attend the target encoding.")
+            model = classifiers.RnnCa(learning_rate=lr, prefix=FLAGS.model_name.lower(), verbose=verbose, n_epochs=FLAGS.epochs, patience=FLAGS.patience)
+        elif "RNN" in FLAGS.model_name:
+            print("Not implemented yet...")
         else:
-            if FLAGS.model_name == "RNN:INC1":
-                model = classifiers.RnnCh(prefix=FLAGS.model_name.lower(), verbose=verbose, n_epochs=FLAGS.epochs, patience=FLAGS.patience)
-            elif FLAGS.model_name == "RNN:INC2":
-                model = classifiers.LSTM_IC2_CLF(prefix=FLAGS.model_name.lower(), verbose=verbose,  n_epochs=FLAGS.epochs, patience=FLAGS.patience)
-            elif "RNN" in FLAGS.model_name:
-                print("Not implemented yet...")
-            else:
-                if "BERT" in FLAGS.model_name:
-                    os.environ['TFHUB_CACHE_DIR'] = 'embeddings'
-                    lr = 2e-05
-                    if FLAGS.model_name == "BERT:OOC":
-                        print("Training BERT with no context mechanism added.")
-                        model = classifiers.BERT_MLP(patience=FLAGS.patience, lr=lr,  epochs=FLAGS.epochs, session=sess)
-                    elif FLAGS.model_name == "BERT:INC1":
-                        print("Training BERT with parent concatenated to text.")
-                        model = classifiers.BERT_MLP(patience=FLAGS.patience, lr=lr, DATA2_COLUMN="parent", epochs=FLAGS.epochs, session=sess)
-                    elif FLAGS.model_name == "BERT:INC2":
-                        print("Training BERT with a context-reading mechanism added.")
-                        model = classifiers.BERT_MLP_CA(patience=FLAGS.patience, lr=lr, epochs=FLAGS.epochs, session=sess)
-                    elif FLAGS.model_name == "BERT:CCTK":
-                        print("Training BERT over CCTK")
-                        model = classifiers.BERT_MLP(patience=FLAGS.patience, lr=lr, epochs=FLAGS.epochs, session=sess)
-                        cctk = pd.read_csv("data/CCTK.csv.zip", nrows=100000)
-                        x_train_pd, x_dev_pd = train_test_split(
-                            pd.DataFrame({"text": cctk.comment_text, "label": cctk.target.apply(round)}),
-                            test_size=0.1,
-                            random_state=FLAGS.seed
-                        )
-                        model.fit(train=x_train_pd,
-                                  dev=x_dev_pd,
-                                  class_weights=class_weights,
-                                  pretrained_embeddings=embeddings)
-                        cctk_preds_pd = pd.DataFrame()
-                        for i in range(10):
-                            x_val_pd = pd.read_csv(f"data/standard.622/random_ten/{i}/ic.val.csv")
-                            gold, predictions = x_val_pd.label.to_numpy(), model.predict(x_val_pd).flatten()
-                            score = roc_auc_score(gold, predictions)
-                            print(f"ROC-AUC@{i}: {score}")
-                            cctk_preds_pd[f"MCCV_{i}"] = predictions
-                        cctk_preds_pd.to_csv("cctk.csv")
-                        model.model.save_weights("bert_weights.h5")
-                    else:
-                        sys.exit("ERROR: Not implemented yet...")
+            if "BERT" in FLAGS.model_name:
+                os.environ['TFHUB_CACHE_DIR'] = 'embeddings'
+                lr = 2e-05
+                if FLAGS.model_name == "BERT:OOC":
+                    print("Training BERT with no context mechanism added.")
+                    model = classifiers.BERT_MLP(patience=FLAGS.patience, lr=lr,  epochs=FLAGS.epochs, session=sess)
+                elif FLAGS.model_name == "BERT:INC1":
+                    print("Training BERT with parent concatenated to text.")
+                    model = classifiers.BERT_MLP(patience=FLAGS.patience, lr=lr, DATA2_COLUMN="parent", epochs=FLAGS.epochs, session=sess)
+                elif FLAGS.model_name == "BERT:INC2":
+                    print("Training BERT with a context-reading mechanism added.")
+                    model = classifiers.BERT_MLP_CA(patience=FLAGS.patience, lr=lr, epochs=FLAGS.epochs, session=sess)
+                elif FLAGS.model_name == "BERT:CCTK":
+                    print("Training BERT over CCTK")
+                    model = classifiers.BERT_MLP(patience=FLAGS.patience, lr=lr, epochs=FLAGS.epochs, session=sess)
+                    cctk = pd.read_csv("data/CCTK.csv.zip", nrows=100000)
+                    x_train_pd, x_dev_pd = train_test_split(
+                        pd.DataFrame({"text": cctk.comment_text, "label": cctk.target.apply(round)}),
+                        test_size=0.1,
+                        random_state=FLAGS.seed
+                    )
+                    model.fit(train=x_train_pd,
+                              dev=x_dev_pd,
+                              class_weights=class_weights,
+                              pretrained_embeddings=embeddings)
+                    cctk_preds_pd = pd.DataFrame()
+                    for i in range(10):
+                        x_val_pd = pd.read_csv(f"data/standard.622/random_ten/{i}/ic.val.csv")
+                        gold, predictions = x_val_pd.label.to_numpy(), model.predict(x_val_pd).flatten()
+                        score = roc_auc_score(gold, predictions)
+                        print(f"ROC-AUC@{i}: {score}")
+                        cctk_preds_pd[f"MCCV_{i}"] = predictions
+                    cctk_preds_pd.to_csv("cctk.csv")
+                    model.model.save_weights("bert_weights.h5")
+                else:
+                    sys.exit("ERROR: Not implemented yet...")
 
         print(f"Training {model.name}...")
         if "BERT" in FLAGS.model_name:
@@ -158,9 +165,6 @@ def train(with_context, verbose=1, splits_path="data/standard/random_ten", the_s
         print("Evaluating...")
         print(f"ROC-AUC: {score}")
         print(f"STATS: toxicity (%) at predicted: {np.mean(predictions)} vs at gold: {np.mean(gold)}")
-        if FLAGS.confidence_intervals !=0:
-            score, intervals = ci.AUC(gold_truth=list(gold), predictions=list(predictions)).evaluate()
-            print(f"ROC-AUC ± CIs: {score} ± {intervals}")
     return score, predictions, model
 
 

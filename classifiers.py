@@ -15,18 +15,17 @@ import tensorflow as tf
 import tensorflow_hub as hub
 from tensorflow.keras import backend as K
 from bert import tokenization
-from .utils import InputExample, convert_examples_to_features
+from utils import InputExample, convert_examples_to_features
 from sklearn.metrics import *
-import pickle
 
 BERT_MODEL_PATH = "https://tfhub.dev/google/bert_cased_L-12_H-768_A-12/1"
 
 METRICS = [
-      keras.metrics.TruePositives(name='tp'),
-      keras.metrics.FalsePositives(name='fp'),
-      keras.metrics.TrueNegatives(name='tn'),
-      keras.metrics.FalseNegatives(name='fn'),
-      keras.metrics.BinaryAccuracy(name='accuracy'),
+#      keras.metrics.TruePositives(name='tp'),
+#      keras.metrics.FalsePositives(name='fp'),
+#      keras.metrics.TrueNegatives(name='tn'),
+#      keras.metrics.FalseNegatives(name='fn'),
+#      keras.metrics.BinaryAccuracy(name='accuracy'),
       keras.metrics.Precision(name='precision'),
       keras.metrics.Recall(name='recall'),
       keras.metrics.AUC(name='auc'),
@@ -294,7 +293,7 @@ class RnnCa(RNN):
         :param prefix:
         :param kwargs:
         """
-        super(RnnCi, self).__init__(**kwargs)
+        super(RnnCa, self).__init__(**kwargs)
         self.prefix = prefix
 
     def build(self, bias=0):
@@ -302,27 +301,24 @@ class RnnCa(RNN):
         stack = Embedding(self.vocab_size + 2, 200, mask_zero=True)(target_input)
         for i in range(self.stacks):
             stack = LSTM(self.hidden_size, return_sequences=True)(stack)
-        target_rnn = Bidirectional(LSTM(self.hidden_size, return_sequences=False))(stack)
+        target_rnn = Bidirectional(LSTM(self.hidden_size, return_sequences=True))(stack)
 
         parent_input = Input(shape=(self.max_length,))
         parent_emb = Embedding(self.vocab_size + 2, 200, mask_zero=True)(parent_input)
         parent_rnn = LSTM(200, return_sequences=False)(parent_emb)
 
         # Attention mechanism
-        att = keras.layers.wrappers.TimeDistributed(
-            Dense(self.hidden_attention_layers[0], activation='relu',
-                  W_regularizer=keras.regularizers.WeightRegularizer(l2=self.l2)))(target_rnn)
-        for h in self.hidden_attention_layers[1:]:
-            att = keras.layers.wrappers.TimeDistributed(
-                Dense(h, activation='relu', W_regularizer=keras.regularizers.WeightRegularizer(l2=self.l2)))(att)
-        att = keras.layers.wrappers.TimeDistributed(Dense(1, activation=None))(att)
+        att_in = keras.layers.RepeatVector(self.max_length)(parent_rnn)
+        att = keras.layers.TimeDistributed(Dense(128, activation='relu'))(att_in)
+        att = keras.layers.TimeDistributed(Dense(1, activation=None))(att)
         att = keras.layers.Flatten()(att)
         att = keras.layers.Activation('softmax')(att)
-        att = keras.layers.core.RepeatVector(self.hidden_size)(att)
-        att = keras.layers.core.Permute([2, 1])(att)
-        att_c = keras.layers.core.RepeatVector(self.hidden_size)(parent_rnn)
-        att_c = keras.layers.core.Permute([2, 1])(att_c)
-        ax = keras.layers.merge([att, att_c, target_rnn], mode='mul')
+        att = keras.layers.RepeatVector(2*self.hidden_size)(att)
+        att = keras.layers.Permute([2, 1])(att)
+#        att_c = keras.layers.RepeatVector(self.hidden_size)(parent_rnn)
+#        att_c = keras.layers.Permute([2, 1])(att_c)
+#       ax = keras.layers.merge([att, att_c, target_rnn], mode='mul')
+        ax = concatenate([att, target_rnn])
         ax = Lambda(lambda x: K.sum(x, axis=1))(ax)
 
         fnn = Dense(128, activation='tanh')(ax)
