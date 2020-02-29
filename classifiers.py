@@ -15,7 +15,11 @@ import tensorflow as tf
 import tensorflow_hub as hub
 from tensorflow.keras import backend as K
 from bert import tokenization
-from .utils import InputExample, convert_examples_to_features
+try:
+    from .utils import InputExample, convert_examples_to_features
+except:
+    from utils import InputExample, convert_examples_to_features
+
 from sklearn.metrics import *
 
 BERT_MODEL_PATH = "https://tfhub.dev/google/bert_cased_L-12_H-768_A-12/1"
@@ -43,10 +47,10 @@ def load_embeddings_index():
 
 
 
-class RNN():
+class Rnn():
     def __init__(self, stacks=0, verbose=1, batch_size=128, n_epochs=100, max_length=512,
                  loss="binary_crossentropy", monitor_loss="val_loss", patience=3,
-                 prefix="vanilla",
+                 name="vanilla",
                  hidden_size=128,
                  word_embedding_size=200,
                  seed=42,
@@ -74,9 +78,9 @@ class RNN():
         self.loss = loss
         self.word_embedding_size = word_embedding_size
         self.hidden_size=hidden_size
-        self.prefix = prefix
+        self.name = name
         self.monitor_loss = monitor_loss
-        self.name = f'{prefix}-b{batch_size}.e{n_epochs}.len{max_length}.rnn'
+        self.properties = f'b{batch_size}.e{n_epochs}.len{max_length}.rnn'
 
     def load_embeddings(self, pretrained_dict):
         self.embedding_matrix = np.zeros((self.vocab_size + 2, 100))
@@ -145,9 +149,9 @@ class RNN():
         self.build()
         self.model.load_weights(self.name+".h5")
 
-class RnnCh(RNN):
+class RnnCh(Rnn):
 
-    def __init__(self, prefix="CH", **kwargs):
+    def __init__(self, name="rnn-h", **kwargs):
         """
         RNN classification of the target text, with the parent comment parsed separately (different RNN)
         and concatenated before the classification layer on top.
@@ -157,7 +161,7 @@ class RnnCh(RNN):
         :param kwargs:
         """
         super(RnnCh, self).__init__(**kwargs)
-        self.prefix = prefix
+        self.name = name
 
     def build(self, bias=0):
         target_input = Input(shape=(self.max_length,))
@@ -215,9 +219,9 @@ class RnnCh(RNN):
         return predictions
 
 
-class RnnCi(RNN):
+class RnnCi(Rnn):
 
-    def __init__(self, prefix="CI", **kwargs):
+    def __init__(self, name="rnn-i", **kwargs):
         """
         RNN classification of the target text with the parent text (context)
         presented at each input of the target RNN (Context as Input).
@@ -225,7 +229,7 @@ class RnnCi(RNN):
         :param kwargs:
         """
         super(RnnCi, self).__init__(**kwargs)
-        self.prefix = prefix
+        self.name = name
 
     def build(self, bias=0):
         target_input = Input(shape=(self.max_length,))
@@ -284,9 +288,9 @@ class RnnCi(RNN):
         predictions = self.model.predict(self.text_process(test.text, test.parent))
         return predictions
 
-class RnnCa(RNN):
+class RnnCa(Rnn):
 
-    def __init__(self, prefix="CI", **kwargs):
+    def __init__(self, name="rnn-i", **kwargs):
         """
         RNN classification of the target text with the parent text representation (context)
         affecting the target RNN through an attention mechanism (Context Attention).
@@ -294,7 +298,7 @@ class RnnCa(RNN):
         :param kwargs:
         """
         super(RnnCa, self).__init__(**kwargs)
-        self.prefix = prefix
+        self.name = name
 
     def build(self, bias=0):
         target_input = Input(shape=(self.max_length,))

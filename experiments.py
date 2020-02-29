@@ -104,7 +104,7 @@ def train(with_context, verbose=1, splits_path="data/standard/random_ten", the_s
         lr = 2e-05
         if FLAGS.model_name.lower() == CONTEXT_NONE:
             print("Training RNN with no context presented.")
-            model = classifiers.RNN(learning_rate=lr, prefix=FLAGS.model_name.lower(), verbose=verbose, n_epochs=FLAGS.epochs)
+            model = classifiers.Rnn(learning_rate=lr, prefix=FLAGS.model_name.lower(), verbose=verbose, n_epochs=FLAGS.epochs)
         elif FLAGS.model_name.lower() == CONTEXT_HIERARCHICAL:
             print("Training RNN with context (represented through another RNN) concatenated with the target.")
             model = classifiers.RnnCh(learning_rate=lr, prefix=FLAGS.model_name.lower(), verbose=verbose, n_epochs=FLAGS.epochs, patience=FLAGS.patience)
