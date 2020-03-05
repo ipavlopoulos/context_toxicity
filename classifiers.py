@@ -80,7 +80,7 @@ class Rnn():
         self.hidden_size=hidden_size
         self.name = name
         self.monitor_loss = monitor_loss
-        self.properties = f'b{batch_size}.e{n_epochs}.len{max_length}.rnn'
+        self.properties = f'b{batch_size}.e{n_epochs}.len{max_length}.aug{augmented_vocabulary}.rnn'
 
     def load_embeddings(self, pretrained_dict):
         self.embedding_matrix = np.zeros((self.vocab_size + 2, 100))
