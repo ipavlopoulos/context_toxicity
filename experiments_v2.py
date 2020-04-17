@@ -10,7 +10,7 @@ import os, sys
 import datetime
 
 FLAGS = flags.FLAGS
-flags.DEFINE_string("model_name", None, "cc, ci, ch, ca, none, bert, bert_sep, bert_cc")  # name , default, help
+flags.DEFINE_string("model_name", None, "rnn _cc, _ci, _ch, _ca, _none, _chl, _chl2; bert, bert _sep, _cc, _hl;")  # name , default, help
 flags.DEFINE_integer("with_context_data", 0, "False for context-less training data.")  # name , default, help
 flags.DEFINE_integer("repeat", 0, "Repetitions of the experiment. Default is 0.")
 flags.DEFINE_integer("epochs", 100, "Epochs. Default is 100.")
@@ -22,15 +22,41 @@ flags.DEFINE_integer("verbose", 1, "Default is 1.")
 flags.DEFINE_string("experiment_version_name", f"version-{datetime.datetime.now().strftime('%d%B%Y-%H%M')}", "The name of this series of experiments.")
 flags.DEFINE_string("split", "622", "'811' for 8/1/1 split or '622' for 6/2/2 split")
 flags.DEFINE_integer("aug_voc", 1, "Augmented vocabulary (using the parent comment) or not. Default is True.")
+flags.DEFINE_string("parent_label", "toxicity_parent", "The label of the parent comment.")
 
-RNN = "none"
-RNN_IN = "ci"
-RNN_ATT = "ca"
-RNN_HIE = "ch"
-RNN_CC = "cc"
+RNN = "rnn_none"
+RNN_IN = "rnn_ci"
+RNN_ATT = "rnn_ca"
+RNN_HIE = "rnn_ch"
+RNN_HL = "rnn_chl"
+RNN_HL2 = "rnn_chl2"
+RNN_CC = "rnn_cc"
 BERT = "bert"
 BERT_SEP = "bert_sep"
 BERT_CC = "bert_cc"
+BERT_HL = "bert_hl"
+BERT_HLG = "bert_hl_gold"
+B1 = "baseline_perspective_MLP"
+B2 = "baseline_perspective@parent"
+B3 = "baseline_perspective@target"
+
+
+def get_baseline(seed):
+    if FLAGS.model_name.lower() == B1:
+        print("Training MLP with Perspective scores.")
+        return classifiers.MlpH(learning_rate=FLAGS.learning_rate,
+                     name=FLAGS.model_name.lower(),
+                     verbose=FLAGS.verbose,
+                     n_epochs=FLAGS.epochs,
+                     patience=FLAGS.patience,
+                     seed=seed)
+    elif FLAGS.model_name.lower() == B2:
+        return classifiers.Baseline(label="toxicity_parent")
+    elif FLAGS.model_name.lower() == B3:
+        return classifiers.Baseline(label="perspective_target")
+    else:
+        sys.exit("ERROR: NOT IMPLEMENTED YET!")
+
 
 def get_rnn(seed):
     if FLAGS.model_name.lower() == RNN:
@@ -43,6 +69,15 @@ def get_rnn(seed):
         print("Training RNN with context (represented through another RNN) concatenated with the target before the "
               "top FFNN.")
         rnn = classifiers.RnnCh
+    elif FLAGS.model_name.lower() == RNN_HL:
+        print("Training RNN with parent comment representation and label concatenated to the target"
+              "comment representation before the top FFNN.")
+        rnn = classifiers.RnnChl
+        return rnn(learning_rate=FLAGS.learning_rate, parent_lbl=FLAGS.parent_label, name=FLAGS.model_name.lower(), verbose=FLAGS.verbose,
+                   n_epochs=FLAGS.epochs, patience=FLAGS.patience, augmented_vocabulary=FLAGS.aug_voc, seed=seed)
+    elif FLAGS.model_name.lower() == RNN_HL2:
+        print("Parent and Target scored by Perspective and parsed by RNN")
+        rnn = classifiers.RnnChl2
     elif FLAGS.model_name.lower() == RNN_IN:
         print("Training RNN with context concatenated with word embeddings.")
         rnn = classifiers.RnnCi
@@ -66,6 +101,12 @@ def get_bert(seed, sess):
     elif FLAGS.model_name.lower() == BERT_CC:
         print("Training BERT with parent concatenated to text omitting the [SEP] separation token")
         model = classifiers.BERT_MLP(patience=FLAGS.patience, seed=seed, lr=lr, epochs=FLAGS.epochs, session=sess)
+    elif FLAGS.model_name.lower() == BERT_HL:
+        print("Training BERT with parent score integrated before the FFNN.")
+        model = classifiers.BERT_FFNN_HL(patience=FLAGS.patience, seed=seed, lr=lr, epochs=FLAGS.epochs, session=sess)
+    elif FLAGS.model_name.lower() == BERT_HLG:
+        print("Training BERT with parent GOLD score integrated before the FFNN.")
+        model = classifiers.BERT_FFNN_HL(use_gold_parent=True, patience=FLAGS.patience, seed=seed, lr=lr, epochs=FLAGS.epochs, session=sess)
     else:
         print(f"ERROR: {FLAGS.model_name.lower()} is not implemented yet")
         model = None
@@ -79,6 +120,8 @@ def train(seed, sess=None):
     test_size = 0.1 if FLAGS.split == "811" else 0.2
     train_pd, test_pd = train_test_split(data_pd, test_size=test_size, random_state=seed)
     train_pd, dev_pd = train_test_split(train_pd, test_size=test_pd.shape[0], random_state=seed)
+
+    # some exceptions
     if "cc" in FLAGS.model_name.lower():
         for dataset in (train_pd, dev_pd, test_pd):
             dataset.text = dataset.parent.apply(lambda x: x + " ") + dataset.text
@@ -87,10 +130,14 @@ def train(seed, sess=None):
 
     # build the model
     print("Creating the model...")
-    if "bert" in FLAGS.model_name.lower():
+    if "baseline" in FLAGS.model_name.lower():
+        model = get_baseline(seed)
+    elif "bert" in FLAGS.model_name.lower():
         model = get_bert(seed, sess)
-    elif "bert" not in FLAGS.model_name.lower():
+    elif "rnn" in FLAGS.model_name.lower():
         model = get_rnn(seed)
+    else:
+        sys.exit("ERROR: NOT IMPLEMENTED YET.")
 
     # train it
     print(f"Training {model.name}...")
@@ -99,10 +146,15 @@ def train(seed, sess=None):
     # evaluate
     print("Evaluating...")
     predictions = model.predict(test_pd).flatten()
-    score = roc_auc_score(test_pd.label.to_numpy(), predictions)
+    roc = get_roc(test_pd, predictions)
+    return roc, predictions, model
+
+
+def get_roc(test, predictions):
+    score = roc_auc_score(test.label.to_numpy(), predictions)
     print(f"ROC-AUC: {score}")
-    print(f"STATS: toxicity (%) at predicted: {np.mean(predictions)} vs at gold: {test_pd.label.mean()}")
-    return score, predictions, model
+    print(f"STATS: toxicity (%) at predicted: {np.mean(predictions)} vs at gold: {test.label.mean()}")
+    return score
 
 
 def repeat_experiment():

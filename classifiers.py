@@ -364,6 +364,221 @@ class RnnCa(Rnn):
         predictions = self.model.predict(self.text_process(test.text, test.parent))
         return predictions
 
+class RnnChl(RnnCh):
+
+    def __init__(self, name="rnn-hl", parent_lbl="toxicity_parent", **kwargs):
+        """
+        RnnChl extends RnnCh, which concatenates the parent text representation with
+        the target text representation before the FFNN, by also exploiting the parent
+        comment label.
+        :param prefix:
+        :param kwargs:
+        """
+        super(RnnChl, self).__init__(**kwargs)
+        self.name = name
+        self.parent_lbl = parent_lbl
+
+    def build(self, bias=0):
+        target_input = Input(shape=(self.max_length,))
+        stack = Embedding(self.vocab_size + 2, 200, mask_zero=True)(target_input)
+        for i in range(self.stacks):
+            stack = LSTM(self.hidden_size, return_sequences=True)(stack)
+        target_rnn = Bidirectional(LSTM(self.hidden_size, return_sequences=False))(stack)
+
+        parent_input = Input(shape=(self.max_length,))
+        parent_emb = Embedding(self.vocab_size + 2, 100, mask_zero=True)(parent_input)
+        parent_rnn = Bidirectional(LSTM(64, return_sequences=False))(parent_emb)
+
+        # The parent label
+        parent_label_input = Input(shape=(1,))
+
+        x = concatenate([target_rnn, parent_rnn, parent_label_input])
+
+        fnn = Dense(128, activation='tanh')(x)
+        fnn = Dense(1, activation='sigmoid', bias_initializer=tf.keras.initializers.Constant(bias))(fnn)
+        self.model = Model(inputs=[target_input, parent_input, parent_label_input], outputs=fnn)
+        self.model.compile(loss=self.loss,
+                           optimizer=keras.optimizers.Adam(learning_rate=self.lr),
+                           metrics=METRICS)
+
+    def fit(self, train, dev, pretrained_embeddings, class_weights={0: 1, 1: 1}):
+        texts = train.text if not self.augmented_vocabulary else train.text + train.parent
+        self.tokenizer.fit_on_texts(texts)
+        self.vocab_size = len(self.tokenizer.word_index) + 1
+        print('Vocabulary Size: %d' % self.vocab_size)
+        X, VX = self.text_process(train.text, train.parent), self.text_process(dev.text, dev.parent)
+        Y, VY = train.label.to_numpy(), dev.label.to_numpy()
+
+        # Adding the parent label input
+        X.append(train[self.parent_lbl])
+        VX.append(dev[self.parent_lbl])
+
+        self.load_embeddings(pretrained_embeddings)
+        pos = sum(Y)
+        neg = len(Y)-pos
+        bias = np.log(pos/neg)
+        self.build(bias=bias)
+        self.model_show()
+        self.history = self.model.fit(X, Y,
+                                      validation_data=(VX, VY),
+                                      epochs=self.n_epochs,
+                                      batch_size=self.batch_size,
+                                      verbose=self.verbose,
+                                      callbacks=[self.early],
+                                      class_weight=class_weights)
+
+    def predict(self, test):
+        x = self.text_process(test.text, test.parent)
+        x.append(test[self.parent_lbl])
+        predictions = self.model.predict(x)
+        return predictions
+
+class RnnChl2(RnnCh):
+
+    def __init__(self, name="rnn-hl2", **kwargs):
+        """
+        RnnChl extends RnnCh, which concatenates the parent text representation with
+        the target text representation before the FFNN, by also exploiting the Perspective
+        scores of the parent and target comments.
+        :param prefix:
+        :param kwargs:
+        """
+        super(RnnChl2, self).__init__(**kwargs)
+        self.name = name
+
+    def build(self, bias=0):
+        target_input = Input(shape=(self.max_length,))
+        stack = Embedding(self.vocab_size + 2, 200, mask_zero=True)(target_input)
+        for i in range(self.stacks):
+            stack = LSTM(self.hidden_size, return_sequences=True)(stack)
+        target_rnn = Bidirectional(LSTM(self.hidden_size, return_sequences=False))(stack)
+
+        parent_input = Input(shape=(self.max_length,))
+        parent_emb = Embedding(self.vocab_size + 2, 100, mask_zero=True)(parent_input)
+        parent_rnn = Bidirectional(LSTM(64, return_sequences=False))(parent_emb)
+
+        # The target score
+        target_label_input = Input(shape=(1,))
+        # The parent score
+        parent_label_input = Input(shape=(1,))
+
+        x = concatenate([target_rnn, parent_rnn, parent_label_input, target_label_input])
+
+        fnn = Dense(128, activation='tanh')(x)
+        fnn = Dense(1, activation='sigmoid', bias_initializer=tf.keras.initializers.Constant(bias))(fnn)
+        self.model = Model(inputs=[target_input, parent_input, target_label_input, parent_label_input], outputs=fnn)
+        self.model.compile(loss=self.loss,
+                           optimizer=keras.optimizers.Adam(learning_rate=self.lr),
+                           metrics=METRICS)
+
+    def fit(self, train, dev, pretrained_embeddings, class_weights={0: 1, 1: 1}):
+        texts = train.text if not self.augmented_vocabulary else train.text + train.parent
+        self.tokenizer.fit_on_texts(texts)
+        self.vocab_size = len(self.tokenizer.word_index) + 1
+        print('Vocabulary Size: %d' % self.vocab_size)
+        X, VX = self.text_process(train.text, train.parent), self.text_process(dev.text, dev.parent)
+        Y, VY = train.label.to_numpy(), dev.label.to_numpy()
+
+        # Adding the target label input
+        X.append(train["perspective_target"])
+        VX.append(dev["perspective_target"])
+        # Adding the parent label input
+        X.append(train["perspective_parent"])
+        VX.append(dev["perspective_parent"])
+
+        self.load_embeddings(pretrained_embeddings)
+        pos = sum(Y)
+        neg = len(Y)-pos
+        bias = np.log(pos/neg)
+        self.build(bias=bias)
+        self.model_show()
+        self.history = self.model.fit(X, Y,
+                                      validation_data=(VX, VY),
+                                      epochs=self.n_epochs,
+                                      batch_size=self.batch_size,
+                                      verbose=self.verbose,
+                                      callbacks=[self.early],
+                                      class_weight=class_weights)
+
+    def predict(self, test):
+        x = self.text_process(test.text, test.parent)
+        x.append(test["perspective_target"])
+        x.append(test["perspective_parent"])
+        predictions = self.model.predict(x)
+        return predictions
+
+class MlpH():
+
+    def __init__(self, name="mlp-h",
+                 verbose=1,
+                 batch_size=128,
+                 n_epochs=100,
+                 loss="binary_crossentropy",
+                 monitor_loss="val_auc",
+                 patience=3,
+                 hidden_size=16,
+                 word_embedding_size=200,
+                 seed=42,
+                 learning_rate=0.001,
+                 augmented_vocabulary=True,
+                 no_sigmoid=False, **kwargs):
+        self.name = name
+        tf.compat.v1.set_random_seed(seed)
+        np.random.seed(seed)
+        self.verbose = verbose
+        self.lr=learning_rate
+        self.augmented_vocabulary = augmented_vocabulary
+        self.patience = patience
+        self.hidden_size = hidden_size
+        self.batch_size = batch_size
+        self.early = EarlyStopping(monitor=monitor_loss,
+                                   mode="max",
+                                   verbose=verbose,
+                                   patience=patience,
+                                   restore_best_weights=True
+                                   )
+        self.n_epochs = n_epochs
+        self.no_sigmoid = no_sigmoid
+        self.loss = loss
+        self.word_embedding_size = word_embedding_size
+        self.hidden_size=hidden_size
+        self.name = name
+        self.monitor_loss = monitor_loss
+        self.properties = f'b{batch_size}.e{n_epochs}.mlph'
+
+
+    def build(self, bias=0):
+        target_input = Input(shape=(2,))
+        fnn = Dense(self.hidden_size, activation='tanh')(target_input)
+        fnn = Dense(1, activation='sigmoid', bias_initializer=tf.keras.initializers.Constant(bias))(fnn)
+        self.model = Model(inputs=[target_input], outputs=fnn)
+        self.model.compile(loss=self.loss,
+                           optimizer=keras.optimizers.Adam(learning_rate=self.lr),
+                           metrics=METRICS)
+
+    def process(self, dataset):
+        dataset_pd = pd.DataFrame({"target": dataset.perspective_target, "parent": dataset.perspective_parent})
+        return dataset_pd.to_numpy()
+
+    def fit(self, train, dev, pretrained_embeddings, class_weights={0: 1, 1: 1}):
+        X, VX = self.process(train), self.process(dev)
+        Y, VY = train.label.to_numpy(), dev.label.to_numpy()
+        pos = sum(Y)
+        neg = len(Y)-pos
+        bias = np.log(pos/neg)
+        self.build(bias=bias)
+        self.history = self.model.fit(X, Y,
+                                      validation_data=(VX, VY),
+                                      epochs=self.n_epochs,
+                                      batch_size=self.batch_size,
+                                      verbose=self.verbose,
+                                      callbacks=[self.early],
+                                      class_weight=class_weights)
+
+    def predict(self, test):
+        x = self.process(test)
+        return self.model.predict(x)
+
 
 class BERT(tf.keras.layers.Layer):
     """
@@ -546,7 +761,7 @@ class BERT_MLP():
                                                   self.max_seq_length,
                                                   self.tokenizer)
         x_input_ids, x_input_masks, x_segment_ids, x_labels = self.get_features(x_features)
-        return (x_input_ids, x_input_masks, x_segment_ids), x_labels
+        return [x_input_ids, x_input_masks, x_segment_ids], x_labels
 
     def fit(self, train, dev, bert_weights=None, class_weights={0: 1, 1: 1}, pretrained_embeddings=None):
         train_input, train_labels = self.to_bert_input(train)
@@ -686,3 +901,83 @@ class BERT_MLP_CA(BERT_MLP):
         if self.save_predictions:
             self.save_evaluation_set(val_labels, predictions)
         return predictions
+
+
+class BERT_FFNN_HL(BERT_MLP):
+    """
+    BERT + FFNN on top, which also knows a label of the parent comment.
+    Either, gold or system-generated.
+    """
+
+    def __init__(self, use_gold_parent=False, **kwargs):
+        super(BERT_FFNN_HL, self).__init__(**kwargs)
+        self.name = f'b{self.batch_size}.e{self.epochs}.len{self.max_seq_length}.bert-hl'
+        self.use_gold_parent = use_gold_parent
+
+    def build(self, bias=0):
+        in_id = tf.keras.layers.Input(shape=(self.max_seq_length,), name="input_ids")
+        in_mask = tf.keras.layers.Input(shape=(self.max_seq_length,), name="input_masks")
+        in_segment = tf.keras.layers.Input(shape=(self.max_seq_length,), name="segment_ids")
+        bert_inputs = [in_id, in_mask, in_segment]
+        bert_output = BERT(n_fine_tune_top_layers=self.trainable_layers)(bert_inputs)
+
+        # Adding the parent toxicity estimation before the FFNN
+        parent_label_input = Input(shape=(1,))
+        x = concatenate([bert_output, parent_label_input])
+        inputs = bert_inputs + [parent_label_input]
+        ffnn = tf.keras.layers.Dense(128, activation='tanh')(x)
+        ffnn = tf.keras.layers.Dense(1, activation='sigmoid', bias_initializer=tf.keras.initializers.Constant(bias))(ffnn)
+
+        self.model = tf.keras.models.Model(inputs=inputs, outputs=ffnn)
+        self.model.compile(loss='binary_crossentropy',
+                      optimizer=tf.keras.optimizers.Adam(learning_rate=self.lr),
+                      metrics=METRICS)
+        if self.show_summary:
+            self.model.summary()
+
+    def fit(self, train, dev, bert_weights=None, class_weights={0: 1, 1: 1}, pretrained_embeddings=None):
+        train_input, train_labels = self.to_bert_input(train)
+        dev_input, dev_labels = self.to_bert_input(dev)
+        train_input += [train["toxicity_parent"]]#"perspective_parent" if not self.use_gold_parent else "toxicity_parent"]]
+        dev_input += [dev["toxicity_parent"]]#"perspective_parent" if not self.use_gold_parent else "toxicity_parent"]]
+        pos = sum(train_labels)
+        neg = len(train_labels)-pos
+        bias = np.log(pos/neg)
+        print ("BIAS:", bias)
+        self.build(bias=bias)
+        if bert_weights is not None:
+            self.model.load_weights(bert_weights)
+        self.initialise_vars() # instantiation needs to be right before fitting
+        self.model.fit(train_input,
+                       train_labels,
+                       validation_data=(dev_input, dev_labels),
+                       epochs=self.epochs,
+                       callbacks=[self.earlystop],
+                       batch_size=self.batch_size,
+                       class_weight=class_weights
+                       )
+
+    def predict(self, val_pd):
+        val_input, val_labels = self.to_bert_input(val_pd)
+        val_input += [val_pd["toxicity_parent"]]#"perspective_parent" if not self.use_gold_parent else "toxicity_parent"]]
+        predictions = self.model.predict(val_input)
+        score = roc_auc_score(val_labels, predictions)
+        print('ROC AUC: {:.4f}'.format(score))
+        print('Stopped epoch: ', self.earlystop.stopped_epoch)
+        if self.save_predictions:
+            self.save_evaluation_set(val_labels, predictions)
+        return predictions
+
+
+class Baseline:
+
+    def __init__(self, label="toxicity_parent", **kwargs):
+        self.name = "baseline"
+        self.score_name = label
+
+    def fit(self, **kwargs): pass
+
+    def build(self): pass
+
+    def predict(self, test):
+        return test[self.score_name].to_numpy()
