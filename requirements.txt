@@ -91,7 +91,7 @@ tensorboard=1.15.0=pypi_0
 tensorflow=2.0.0=gpu_py37h768510d_0
 tensorflow-base=2.0.0=gpu_py37h0ec5d1f_0
 tensorflow-estimator=1.15.1=pypi_0
-tensorflow-gpu=1.15.0=pypi_0
+tensorflow-gpu>=1.15.2=pypi_0
 tensorflow-hub=0.7.0=pypi_0
 termcolor=1.1.0=py37_1
 thinc=7.3.1=pypi_0
