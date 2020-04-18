@@ -79,12 +79,12 @@ def split_to_random_sets(splits=10, test_size=0.2, schema="standard", version_na
     for split_num in range(splits):
         os.makedirs(f"{path_name}/{split_num}")
         for setting in ("wc", "oc"):
-            data_pd = pd.read_csv(f"data/{FLAGS.split}/{setting}.csv")
+            data_pd = pd.read_csv(f"data/{setting}.csv")
             train_pd, val_pd = train_test_split(data_pd, test_size=test_size, random_state=FLAGS.seed+split_num)
             train_pd, dev_pd = train_test_split(train_pd, test_size=val_pd.shape[0], random_state=FLAGS.seed+split_num)
-            train_pd.to_csv(f"{path_name}/{split_num}/{setting.replace('w','i')}.train.csv")
-            dev_pd.to_csv(f"{path_name}/{split_num}/{setting.replace('w','i')}.dev.csv")
-            val_pd.to_csv(f"{path_name}/{split_num}/{setting.replace('w','i')}.val.csv")
+            train_pd.to_csv(f"{path_name}/{split_num}/{setting.replace('w','i')}.train.csv", index=False)
+            dev_pd.to_csv(f"{path_name}/{split_num}/{setting.replace('w','i')}.dev.csv", index=False)
+            val_pd.to_csv(f"{path_name}/{split_num}/{setting.replace('w','i')}.val.csv", index=False)
 
 def train(with_context, verbose=1, splits_path="data/standard/random_ten", the_split_to_use=9):
     print(f"Loading the data... Using the '{splits_path}/{the_split_to_use}' split.")
