@@ -4,11 +4,13 @@
 * Context information: 
     * The parent comment.
     * The discussion topic.
+* The dataset is included within `data` in the form of two CSV files.
+    * `oc.csv` comprises the out of context annotations.
+    * `wc.csv` comprises the in-context annotations.
     
-### Manual additions
-* Add a folder `data` wherein the related CSV files will be located.
-    * This research studies two schemas; in context annotation (IC) and out of context (OC), so two CSV are used.
-* Add a folder `embeddings` when using pre-trained embeddings.
+### Word embeddings
+* You will need to add a folder `embeddings` when using pre-trained embeddings.
+    * For example, GloVe embeddings.
 
 ### Building the datasets
 Create random splits:
