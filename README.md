@@ -1,18 +1,12 @@
-# Dataset
-* Two toxicity datasets that include context, which are based on discussions in Wikipedia Talk Pages. 
-* The first one is a small dataset of 250 comments, created in an AB test fashion, where two different groups of annotators (crowdworkers) were employed. One group annotated the comments without context, while the other group was given the same comments, this time along with the parent comment and the title of the thread as context. 
-* The second dataset is larger and comprises 20K comments; 10K comments were annotated out of context, and 10K in context. This time we did not require the same comments to be annotated with and without context.
-* You can find the two datasets under the data folder: [/data](https://github.com/ipavlopoulos/context_toxicity/tree/master/data)
-
-# context_toxicity
-`Toxicity Detection in Context` 
+# Toxicity detection w/ and w/o context
 * Concerning comments existing in a thread.
 * Context information: 
     * The parent comment.
     * The discussion topic.
-* The dataset is included within `data` in the form of two CSV files.
+* The large dataset is included in the [data](https://github.com/ipavlopoulos/context_toxicity/tree/master/data) folder in the form of two CSV files.
     * `oc.csv` comprises the out of context annotations.
     * `wc.csv` comprises the in-context annotations.
+* The small dataset will be included soon.
     
 ### Word embeddings
 * You will need to add a folder `embeddings` when using pre-trained embeddings.
