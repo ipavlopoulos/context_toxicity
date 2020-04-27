@@ -31,14 +31,14 @@ flags.DEFINE_string("schema", "balanced", "'standard' for original distributions
 flags.DEFINE_string("split", "standard.622", "'standard' for 80/10/10 split, 'standard.622' for 60/20/20 split")
 flags.DEFINE_string("bert_weights", None, "Load and use the weights of a pre-trained BERT.")
 
-def evaluate_perspective(dataset_path="data/standard/random_ten", splits=10):
+def evaluate_perspective(dataset_path="data/CAT_LARGE", splits=10):
     scores = []
     for i in range(splits):
         ic = pd.read_csv(f"{dataset_path}/{i}/ic.val.csv")
         scores.append(roc_auc_score(ic.label, ic.api))
     return scores
 
-def create_balanced_datasets(path="data/standard/random_ten/0"):
+def create_balanced_datasets(path="data/CAT_LARGE/0"):
     """
     Create balanced versions of a dataset.
     Positive (here, toxic) examples have been removed from the less imbalanced class,
@@ -60,40 +60,35 @@ def create_balanced_datasets(path="data/standard/random_ten/0"):
         ic_pd.to_csv(f"{path}/ic.{mode}.balanced.csv")
         oc_pd.to_csv(f"{path}/oc.{mode}.balanced.csv")
 
-def split_to_random_sets(splits=10, test_size=0.2, schema="standard", version_name="random_ten"):
+
+def split_to_random_sets(splits=10, test_size=0.2):
     """
     Split the datasets to random sets.
+    :param test_size:
     :param splits: Number of sets to split.
-    :param schema: The type of the original datasets. Note that the type should exist in the filepath.
-    :param version: The version name, under which the splits will be saved.
     :return:
     """
-    assert schema in {"standard", "balanced"}
-    assert FLAGS.split in {"standard.622", "standard"}
-    if FLAGS.split[-3:] != "622":
-        test_size = 0.1
-    path_name = f"data/{FLAGS.split}/{version_name}"
+    path_name = f"data/CAT_LARGE"
     if os.path.exists(path_name):
         sys.exit(f"ERROR: {path_name} is not empty.")
     os.makedirs(path_name)
     for split_num in range(splits):
         os.makedirs(f"{path_name}/{split_num}")
-        for setting in ("wc", "oc"):
+        for setting in ("gc", "gn"):
             data_pd = pd.read_csv(f"data/{setting}.csv")
             train_pd, val_pd = train_test_split(data_pd, test_size=test_size, random_state=FLAGS.seed+split_num)
             train_pd, dev_pd = train_test_split(train_pd, test_size=val_pd.shape[0], random_state=FLAGS.seed+split_num)
-            train_pd.to_csv(f"{path_name}/{split_num}/{setting.replace('w','i')}.train.csv", index=False)
-            dev_pd.to_csv(f"{path_name}/{split_num}/{setting.replace('w','i')}.dev.csv", index=False)
-            val_pd.to_csv(f"{path_name}/{split_num}/{setting.replace('w','i')}.val.csv", index=False)
+            train_pd.to_csv(f"{path_name}/{split_num}/{setting}.train.csv", index=False)
+            dev_pd.to_csv(f"{path_name}/{split_num}/{setting}.dev.csv", index=False)
+            val_pd.to_csv(f"{path_name}/{split_num}/{setting}.val.csv", index=False)
 
-def train(with_context, verbose=1, splits_path="data/standard/random_ten", the_split_to_use=9):
+def train(with_context, verbose=1, splits_path="data/CAT_LARGE", the_split_to_use=9):
     print(f"Loading the data... Using the '{splits_path}/{the_split_to_use}' split.")
-    ctx_id = 'i' if with_context>0 else 'o'
-    mod_id = 'balanced.' if "balanced" in FLAGS.schema else ''
-    train_pd = pd.read_csv(f"{splits_path}/{the_split_to_use}/{ctx_id}c.train.{mod_id}csv")
-    dev_pd = pd.read_csv(f"{splits_path}/{the_split_to_use}/{ctx_id}c.dev.csv")
-    val_pd = pd.read_csv(f"{splits_path}/{the_split_to_use}/ic.val.csv")
-    print (f"INFO: Mod_id: {mod_id} - CTX_id: {ctx_id}")
+    ctx_id = 'c' if with_context>0 else 'n'
+    train_pd = pd.read_csv(f"{splits_path}/{the_split_to_use}/g{ctx_id}.train.csv")
+    dev_pd = pd.read_csv(f"{splits_path}/{the_split_to_use}/g{ctx_id}.dev.csv")
+    val_pd = pd.read_csv(f"{splits_path}/{the_split_to_use}/gc.val.csv")
+    print (f"INFO: CNTXT: {ctx_id}")
     print("Loading the embeddings...")
     class_weights = {0: 1, 1: FLAGS.oversample}
     embeddings = classifiers.load_embeddings_index()
@@ -137,7 +132,7 @@ def train(with_context, verbose=1, splits_path="data/standard/random_ten", the_s
                                   pretrained_embeddings=embeddings)
                         cctk_preds_pd = pd.DataFrame()
                         for i in range(10):
-                            x_val_pd = pd.read_csv(f"data/standard.622/random_ten/{i}/ic.val.csv")
+                            x_val_pd = pd.read_csv(f"data/CAT_LARGE/{i}/ic.val.csv")
                             gold, predictions = x_val_pd.label.to_numpy(), model.predict(x_val_pd).flatten()
                             score = roc_auc_score(gold, predictions)
                             print(f"ROC-AUC@{i}: {score}")
@@ -168,7 +163,7 @@ def repeat_experiment():
     scores = []
     predictions_pd = pd.DataFrame()
     model_name = ""
-    splits_path = f"data/{FLAGS.split}/{FLAGS.splits_version}"
+    splits_path = f"data/CAT_LARGE"
     if not os.path.exists(splits_path):
         sys.exit(f"ERROR: {splits_path} is empty! Make sure the desired dataset is successfully created.")
     FLAGS.experiment_version_name += "." + FLAGS.schema
@@ -182,7 +177,7 @@ def repeat_experiment():
     return np.mean(scores), sem(scores), predictions_pd, model_name # the last model used - the same for all runs
 
 def model_train(at_split):
-    splits_path = f"data/{FLAGS.split}/{FLAGS.splits_version}"
+    splits_path = f"data/CAT_LARGE"
     score, predictions, model = train(FLAGS.with_context_data,
                                       FLAGS.model_name,
                                       splits_path=splits_path,
@@ -195,12 +190,12 @@ def main(argv):
     if FLAGS.create_random_splits>0:
         # Prepare the data for Monte Carlo k-fold Cross Validation
         print(f"Splitting the data randomly into {FLAGS.create_random_splits} splits")
-        split_to_random_sets(splits=FLAGS.create_random_splits, schema=FLAGS.schema, version_name=FLAGS.splits_version)
+        split_to_random_sets(splits=FLAGS.create_random_splits)
     elif FLAGS.create_balanced_datasets>0:
         # Down-sample the splits
         print ("Creating balanced versions")
         for i in range(FLAGS.repeat): # recall to set this to the correct value
-            create_balanced_datasets(f"data/{FLAGS.split}/{FLAGS.splits_version}/{i}")
+            create_balanced_datasets(f"data/CAT_LARGE/{i}")
     elif FLAGS.repeat == 0:
         # Run at a single split
         score, predictions = model_train(FLAGS.at_split)
