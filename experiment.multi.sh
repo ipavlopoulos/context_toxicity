@@ -12,9 +12,10 @@ nohup python experiments.py --with_context_data 0 --model_name "RNN:OOC" --repea
 nohup python experiments.py --with_context_data 0 --model_name "BERT:OOC" --repeat $r > bert@gn.log
 
 # train @gc
+# w/o using the parent comment
+nohup python experiments.py --with_context_data 1 --model_name "RNN:OOC" --repeat $r > rnn@gc.log
+nohup python experiments.py --with_context_data 1 --model_name "BERT:OOC" --repeat $r > bert@gc.log
+# w/ using the parent comment
 nohup python experiments.py --with_context_data 1 --model_name "RNN:INC1" --repeat $r > rnn@gc.c1.log
 nohup python experiments.py --with_context_data 1 --model_name "BERT:INC1" --repeat $r > bert@gc.c1.log
 nohup python experiments.py --with_context_data 1 --model_name "BERT:INC2" --repeat $r > bert@gc.c2.log
-# -- use no context
-nohup python experiments.py --with_context_data 1 --model_name "RNN:OOC" --repeat $r > rnn@gc.log
-nohup python experiments.py --with_context_data 1 --model_name "BERT:OOC" --repeat $r > BERT@gc.log

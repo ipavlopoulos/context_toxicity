@@ -24,11 +24,8 @@ flags.DEFINE_integer("confidence_intervals", 1, "Show Confidence Intervals along
 flags.DEFINE_integer("create_random_splits", 0, "Create random splits. Default number is 0, which means: 'do not split'.")
 flags.DEFINE_integer("patience", 3, "Waiting epochs for the best performance. Default is 10.")  # name , default, help
 flags.DEFINE_integer("seed", 42, "The seed to initialise the random state. Default is 42.")
-flags.DEFINE_string("splits_version", "random_ten", "The name of the splits directory. Default is 'random_ten'.")
 flags.DEFINE_string("experiment_version_name", f"version-{datetime.datetime.now().strftime('%d%B%Y-%H%M')}", "The name of the splits directory. Default is 'standard_ten'.")
-flags.DEFINE_string("schema", "balanced", "'standard' for original distributions, 'balanced' for downsampled")
-flags.DEFINE_string("split", "standard.622", "'standard' for 80/10/10 split, 'standard.622' for 60/20/20 split")
-flags.DEFINE_string("bert_weights", None, "Load and use the weights of a pre-trained BERT.")
+
 
 def evaluate_perspective(dataset_path="data/CAT_LARGE", splits=10):
     scores = []
@@ -36,28 +33,6 @@ def evaluate_perspective(dataset_path="data/CAT_LARGE", splits=10):
         ic = pd.read_csv(f"{dataset_path}/{i}/ic.val.csv")
         scores.append(roc_auc_score(ic.label, ic.api))
     return scores
-
-def create_balanced_datasets(path="data/CAT_LARGE/0"):
-    """
-    Create balanced versions of a dataset.
-    Positive (here, toxic) examples have been removed from the less imbalanced class,
-    while the same number of negative examples have been removed from the more
-    imbalanced class. The outcome is two equally sized and balanced datasets.
-    :return:
-    """
-    for mode in ("train", "val", "dev"):
-        oc_pd = pd.read_csv(f"{path}/oc.{mode}.csv")
-        oc_pd = oc_pd.sample(frac=1, random_state=FLAGS.seed)
-        ic_pd = pd.read_csv(f"{path}/ic.{mode}.csv")
-        ic_pd = ic_pd.sample(frac=1, random_state=FLAGS.seed)
-        #print(f"Class balance of datasets, InC vs. OoC: {oc_pd.label.sum()/oc_pd.shape[0]} - {ic_pd.label.sum()/ic_pd.shape[0]}")
-        # remove positive (toxic) examples from the less imbalanced set and negative from the other
-        diff = ic_pd.label.sum() - oc_pd.label.sum()
-        ic_pd.drop(ic_pd[ic_pd.label == 1].index[:diff], inplace=True)
-        oc_pd.drop(oc_pd[oc_pd.label == 0].index[:diff], inplace=True)
-        #print(f"InC vs. OoC: {oc_pd.label.sum()/oc_pd.shape[0]} - {ic_pd.label.sum()/ic_pd.shape[0]}")
-        ic_pd.to_csv(f"{path}/ic.{mode}.balanced.csv")
-        oc_pd.to_csv(f"{path}/oc.{mode}.balanced.csv")
 
 
 def split_to_random_sets(splits=10, test_size=0.2):
@@ -143,10 +118,7 @@ def train(with_context, verbose=1, splits_path="data/CAT_LARGE/MCCV", the_split_
                         sys.exit("ERROR: Not implemented yet...")
 
         print(f"Training {model.name}...")
-        if "BERT" in FLAGS.model_name:
-            model.fit(train=train_pd, dev=dev_pd, bert_weights=FLAGS.bert_weights, class_weights=class_weights, pretrained_embeddings=embeddings)
-        else:
-            model.fit(train=train_pd, dev=dev_pd, class_weights=class_weights, pretrained_embeddings=embeddings)
+        model.fit(train=train_pd, dev=dev_pd, class_weights=class_weights, pretrained_embeddings=embeddings)
 
         gold, predictions = val_pd.label.to_numpy(), model.predict(val_pd).flatten()
         score = roc_auc_score(gold, predictions)
@@ -166,7 +138,6 @@ def repeat_experiment():
     splits_path = f"data/CAT_LARGE/MCCV"
     if not os.path.exists(splits_path):
         sys.exit(f"ERROR: {splits_path} is empty! Make sure the desired dataset is successfully created.")
-    FLAGS.experiment_version_name += "." + FLAGS.schema
     os.mkdir(FLAGS.experiment_version_name)
     for i in range(FLAGS.repeat):
         print(f"REPETITION: {i}")
@@ -176,6 +147,7 @@ def repeat_experiment():
         model_name = model.name
     return np.mean(scores), sem(scores), predictions_pd, model_name # the last model used - the same for all runs
 
+
 def model_train(at_split):
     splits_path = f"data/CAT_LARGE"
     score, predictions, model = train(FLAGS.with_context_data,
@@ -184,6 +156,7 @@ def model_train(at_split):
                                       the_split_to_use=at_split)
     #model.save() todo: fix.
     return score, predictions
+
 
 def main(argv):
 
@@ -202,6 +175,7 @@ def main(argv):
         score, sem, predictions_pd, model_name = repeat_experiment()
         predictions_pd.to_csv(f"{FLAGS.experiment_version_name}/{model_name}.predictions.csv")
         print (f"{score} ± {sem}")
+
 
 if __name__ == "__main__":
     app.run(main)
