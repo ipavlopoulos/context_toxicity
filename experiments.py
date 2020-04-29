@@ -24,7 +24,6 @@ flags.DEFINE_integer("confidence_intervals", 1, "Show Confidence Intervals along
 flags.DEFINE_integer("create_random_splits", 0, "Create random splits. Default number is 0, which means: 'do not split'.")
 flags.DEFINE_integer("patience", 3, "Waiting epochs for the best performance. Default is 10.")  # name , default, help
 flags.DEFINE_integer("seed", 42, "The seed to initialise the random state. Default is 42.")
-flags.DEFINE_integer("create_balanced_datasets", 0, "If True, use downsampling to create balanced versions of the original datasets.")
 flags.DEFINE_string("splits_version", "random_ten", "The name of the splits directory. Default is 'random_ten'.")
 flags.DEFINE_string("experiment_version_name", f"version-{datetime.datetime.now().strftime('%d%B%Y-%H%M')}", "The name of the splits directory. Default is 'standard_ten'.")
 flags.DEFINE_string("schema", "balanced", "'standard' for original distributions, 'balanced' for downsampled")
@@ -68,27 +67,28 @@ def split_to_random_sets(splits=10, test_size=0.2):
     :param splits: Number of sets to split.
     :return:
     """
-    path_name = f"data/CAT_LARGE"
+    path_name = f"data/CAT_LARGE/MCCV"
     if os.path.exists(path_name):
         sys.exit(f"ERROR: {path_name} is not empty.")
     os.makedirs(path_name)
     for split_num in range(splits):
         os.makedirs(f"{path_name}/{split_num}")
         for setting in ("gc", "gn"):
-            data_pd = pd.read_csv(f"data/{setting}.csv")
+            data_pd = pd.read_csv(f"data/CAT_LARGE/{setting}.csv")
             train_pd, val_pd = train_test_split(data_pd, test_size=test_size, random_state=FLAGS.seed+split_num)
             train_pd, dev_pd = train_test_split(train_pd, test_size=val_pd.shape[0], random_state=FLAGS.seed+split_num)
             train_pd.to_csv(f"{path_name}/{split_num}/{setting}.train.csv", index=False)
             dev_pd.to_csv(f"{path_name}/{split_num}/{setting}.dev.csv", index=False)
             val_pd.to_csv(f"{path_name}/{split_num}/{setting}.val.csv", index=False)
 
-def train(with_context, verbose=1, splits_path="data/CAT_LARGE", the_split_to_use=9):
-    print(f"Loading the data... Using the '{splits_path}/{the_split_to_use}' split.")
-    ctx_id = 'c' if with_context>0 else 'n'
+
+def train(with_context, verbose=1, splits_path="data/CAT_LARGE/MCCV", the_split_to_use=9):
+    print(f"Loading the data: Using the '{splits_path}/{the_split_to_use}' split.")
+    ctx_id = 'c' if with_context > 0 else 'n'
+    print(f"Operating w/{'' if with_context>0 else 'o'} context")
     train_pd = pd.read_csv(f"{splits_path}/{the_split_to_use}/g{ctx_id}.train.csv")
     dev_pd = pd.read_csv(f"{splits_path}/{the_split_to_use}/g{ctx_id}.dev.csv")
     val_pd = pd.read_csv(f"{splits_path}/{the_split_to_use}/gc.val.csv")
-    print (f"INFO: CNTXT: {ctx_id}")
     print("Loading the embeddings...")
     class_weights = {0: 1, 1: FLAGS.oversample}
     embeddings = classifiers.load_embeddings_index()
@@ -163,7 +163,7 @@ def repeat_experiment():
     scores = []
     predictions_pd = pd.DataFrame()
     model_name = ""
-    splits_path = f"data/CAT_LARGE"
+    splits_path = f"data/CAT_LARGE/MCCV"
     if not os.path.exists(splits_path):
         sys.exit(f"ERROR: {splits_path} is empty! Make sure the desired dataset is successfully created.")
     FLAGS.experiment_version_name += "." + FLAGS.schema
@@ -191,11 +191,6 @@ def main(argv):
         # Prepare the data for Monte Carlo k-fold Cross Validation
         print(f"Splitting the data randomly into {FLAGS.create_random_splits} splits")
         split_to_random_sets(splits=FLAGS.create_random_splits)
-    elif FLAGS.create_balanced_datasets>0:
-        # Down-sample the splits
-        print ("Creating balanced versions")
-        for i in range(FLAGS.repeat): # recall to set this to the correct value
-            create_balanced_datasets(f"data/CAT_LARGE/{i}")
     elif FLAGS.repeat == 0:
         # Run at a single split
         score, predictions = model_train(FLAGS.at_split)
