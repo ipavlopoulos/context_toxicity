@@ -149,7 +149,7 @@ def repeat_experiment():
 
 
 def model_train(at_split):
-    splits_path = f"data/CAT_LARGE"
+    splits_path = f"data/CAT_LARGE/MCCV"
     score, predictions, model = train(FLAGS.with_context_data,
                                       FLAGS.model_name,
                                       splits_path=splits_path,

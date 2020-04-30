@@ -144,6 +144,7 @@ class LSTM_CLF():
         self.build()
         self.model.load_weights(self.name+".h5")
 
+
 class LSTM_IC1_CLF(LSTM_CLF):
     # RNN classification of the target text, with context representation concatenated.
     # The resulting representation of the target text is concatenated with the representation
@@ -208,6 +209,7 @@ class LSTM_IC1_CLF(LSTM_CLF):
     def predict(self, test):
         predictions = self.model.predict(self.text_process(test.text, test.parent))
         return predictions
+
 
 class BERT(tf.keras.layers.Layer):
     """
