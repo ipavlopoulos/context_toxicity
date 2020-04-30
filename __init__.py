@@ -1,2 +1,1 @@
-import utils
-import classifiers
+from . import utils, classifiers
