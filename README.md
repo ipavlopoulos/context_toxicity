@@ -36,11 +36,6 @@ Run a simple bi-LSTM by:
 The names are messy, but these will hopefully change. 
 
 ### The article
->@misc{pavlopoulos2020toxicity,
->    title={Toxicity Detection: Does Context Really Matter?},
->    author={John Pavlopoulos and Jeffrey Sorensen and Lucas Dixon and Nithum Thain and Ion Androutsopoulos},
->    year={2020},
->    eprint={2006.00998},
->    archivePrefix={arXiv},
->    primaryClass={cs.CL}
->}
+* Presented at ACL'20
+* [Link to arXiv](https://arxiv.org/abs/2006.00998)
+>@misc{pavlopoulos2020toxicity, title={Toxicity Detection: Does Context Really Matter?}, author={John Pavlopoulos and Jeffrey Sorensen and Lucas Dixon and Nithum Thain and Ion Androutsopoulos}, year={2020}, eprint={2006.00998}, archivePrefix={arXiv}, primaryClass={cs.CL}}
