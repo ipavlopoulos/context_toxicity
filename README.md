@@ -35,12 +35,12 @@ Run a simple bi-LSTM by:
 
 The names are messy, but these will hopefully change. 
 
-### See the article
-@misc{pavlopoulos2020toxicity,
-    title={Toxicity Detection: Does Context Really Matter?},
-    author={John Pavlopoulos and Jeffrey Sorensen and Lucas Dixon and Nithum Thain and Ion Androutsopoulos},
-    year={2020},
-    eprint={2006.00998},
-    archivePrefix={arXiv},
-    primaryClass={cs.CL}
-}
+### The article
+>@misc{pavlopoulos2020toxicity,
+>    title={Toxicity Detection: Does Context Really Matter?},
+>    author={John Pavlopoulos and Jeffrey Sorensen and Lucas Dixon and Nithum Thain and Ion Androutsopoulos},
+>    year={2020},
+>    eprint={2006.00998},
+>    archivePrefix={arXiv},
+>    primaryClass={cs.CL}
+>}
