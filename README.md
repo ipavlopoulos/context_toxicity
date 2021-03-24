@@ -4,8 +4,8 @@
     * The parent comment.
     * The discussion topic.
 * The large dataset is included in the [data](https://github.com/ipavlopoulos/context_toxicity/tree/master/data) folder in the form of two CSV files.
-    * `oc.csv` comprises the out of context annotations.
-    * `wc.csv` comprises the in-context annotations.
+    * `gn.csv` comprises the out of context annotations.
+    * `gc.csv` comprises the in-context annotations.
 * The small dataset will be included soon.
     
 ### Word embeddings
