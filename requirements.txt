@@ -21,4 +21,4 @@ tensorflow-estimator==1.15.1
 tensorflow-gpu==1.15.2
 tensorflow-hub==0.7.0
 tqdm==4.38.0
-urllib3==1.25.7
+urllib3==1.25.8
