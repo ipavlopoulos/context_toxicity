@@ -24,8 +24,8 @@ The dataset is stored as a CSV. The data file contains 8 columns:
 
 
 ## How to cite this dataset:
-
-```@inproceedings{xenos-etal-2021-context,
+```
+@inproceedings{xenos-etal-2021-context,
     title = "Context Sensitivity Estimation in Toxicity Detection",
     author = "Xenos, Alexandros  and
       Pavlopoulos, John  and
@@ -39,4 +39,7 @@ The dataset is stored as a CSV. The data file contains 8 columns:
     doi = "10.18653/v1/2021.woah-1.15",
     pages = "140--145",
     abstract = "User posts whose perceived toxicity depends on the conversational context are rare in current toxicity detection datasets. Hence, toxicity detectors trained on current datasets will also disregard context, making the detection of context-sensitive toxicity a lot harder when it occurs. We constructed and publicly release a dataset of 10k posts with two kinds of toxicity labels per post, obtained from annotators who considered (i) both the current post and the previous one as context, or (ii) only the current post. We introduce a new task, context-sensitivity estimation, which aims to identify posts whose perceived toxicity changes if the context (previous post) is also considered. Using the new dataset, we show that systems can be developed for this task. Such systems could be used to enhance toxicity detection datasets with more context-dependent posts or to suggest when moderators should consider the parent posts, which may not always be necessary and may introduce additional costs.",
-}```
+}
+```
+
+
