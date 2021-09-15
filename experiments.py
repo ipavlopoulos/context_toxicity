@@ -30,6 +30,7 @@ flags.DEFINE_string("experiment_version_name", f"version-{datetime.datetime.now(
 flags.DEFINE_string("schema", "balanced", "'standard' for original distributions, 'balanced' for downsampled")
 flags.DEFINE_string("split", "standard.622", "'standard' for 80/10/10 split, 'standard.622' for 60/20/20 split")
 flags.DEFINE_string("bert_weights", None, "Load and use the weights of a pre-trained BERT.")
+flags.DEFINE_string("custom_path", None, "Use a custom path of data.")
 
 def evaluate_perspective(dataset_path="data/standard/random_ten", splits=10):
     scores = []
@@ -86,14 +87,29 @@ def split_to_random_sets(splits=10, test_size=0.2, schema="standard", version_na
             dev_pd.to_csv(f"{path_name}/{split_num}/{setting.replace('w','i')}.dev.csv")
             val_pd.to_csv(f"{path_name}/{split_num}/{setting.replace('w','i')}.val.csv")
 
-def train(with_context, verbose=1, splits_path="data/standard/random_ten", the_split_to_use=9):
+def get_datasets_ACL(with_context, splits_path, the_split_to_use):
     print(f"Loading the data... Using the '{splits_path}/{the_split_to_use}' split.")
     ctx_id = 'i' if with_context>0 else 'o'
     mod_id = 'balanced.' if "balanced" in FLAGS.schema else ''
+    print (f"INFO: Mod_id: {mod_id} - CTX_id: {ctx_id}")
     train_pd = pd.read_csv(f"{splits_path}/{the_split_to_use}/{ctx_id}c.train.{mod_id}csv")
     dev_pd = pd.read_csv(f"{splits_path}/{the_split_to_use}/{ctx_id}c.dev.csv")
     val_pd = pd.read_csv(f"{splits_path}/{the_split_to_use}/ic.val.csv")
-    print (f"INFO: Mod_id: {mod_id} - CTX_id: {ctx_id}")
+    return train_pd, dev_pd, val_pd
+
+
+def get_datasets_custom(path, with_context, wc=lambda x: "gc" if x else "gn"):
+    train_pd = pd.read_csv(f"{path}/{wc(with_context)}.train.csv")
+    dev_pd = pd.read_csv(f"{path}/{wc(True)}.dev.csv")
+    val_pd = pd.read_csv(f"{path}/{wc(True)}.val.csv")
+    return train_pd, dev_pd, val_pd
+
+
+def train(with_context, verbose=1, splits_path="data/standard/random_ten", the_split_to_use=9):
+    if FLAGS.custom_path:
+        train_pd, dev_pd, val_pd = get_datasets_custom(FLAGS.custom_path, with_context)
+    else:
+        train_pd, dev_pd, val_pd = get_datasets_ACL(with_context, splits_path=splits_path, the_split_to_use=the_split_to_use)
     print("Loading the embeddings...")
     class_weights = {0: 1, 1: FLAGS.oversample}
     embeddings = classifiers.load_embeddings_index()
@@ -153,7 +169,14 @@ def train(with_context, verbose=1, splits_path="data/standard/random_ten", the_s
         else:
             model.fit(train=train_pd, dev=dev_pd, class_weights=class_weights, pretrained_embeddings=embeddings)
 
+        cs_example = pd.DataFrame({"text": ["“Pigs Are People Too”. “Avant-garde a clue”", "Hi Gadget, interpreted in what manner? Flaming gays? Or Burn a gay?"],
+                                   "parent": ["But what if the user is a lesbian? Then what?", "Hmmm. The flame on top of the gay pride emblem can probably be interpreted in a manner that I did not consider. Perhaps one icon on each end using?"],
+                                   "label": [1,0]
+                                   })
+        example_prediction = model.predict(cs_example)
+        print(f"The scores for the context-aware annotated examples are {example_prediction.flatten()}")
         gold, predictions = val_pd.label.to_numpy(), model.predict(val_pd).flatten()
+        print("Max score:", max(predictions))
         score = roc_auc_score(gold, predictions)
         print("Evaluating...")
         print(f"ROC-AUC: {score}")
