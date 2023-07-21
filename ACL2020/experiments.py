@@ -1,13 +1,12 @@
 from sklearn.model_selection import train_test_split
 import pandas as pd
-from absl import flags, logging, app
+from absl import flags, app
 import numpy as np
-import classifiers
+from ACL2020 import classifiers
 from sklearn.metrics import *
 from scipy.stats import sem
 import tensorflow as tf
 import os, sys
-import json
 import datetime
 # Following is a dependency on the ssig package:
 #! git clone https://github.com/ipavlopoulos/ssig.git
@@ -74,9 +73,9 @@ def train(with_context, verbose=1, splits_path="data/CAT_LARGE/MCCV", the_split_
             model = classifiers.LSTM_CLF(prefix=FLAGS.model_name.lower(), verbose=verbose, n_epochs=FLAGS.epochs)
         else:
             if FLAGS.model_name == "RNN:INC1":
-                model = classifiers.LSTM_IC1_CLF(prefix=FLAGS.model_name.lower(), verbose=verbose,  n_epochs=FLAGS.epochs, patience=FLAGS.patience)
+                model = classifiers.LSTM_IC1_CLF(prefix=FLAGS.model_name.lower(), verbose=verbose, n_epochs=FLAGS.epochs, patience=FLAGS.patience)
             elif FLAGS.model_name == "RNN:INC2":
-                model = classifiers.LSTM_IC2_CLF(prefix=FLAGS.model_name.lower(), verbose=verbose,  n_epochs=FLAGS.epochs, patience=FLAGS.patience)
+                model = classifiers.LSTM_IC2_CLF(prefix=FLAGS.model_name.lower(), verbose=verbose, n_epochs=FLAGS.epochs, patience=FLAGS.patience)
             elif "RNN" in FLAGS.model_name:
                 print("Not implemented yet...")
             else:
@@ -85,7 +84,7 @@ def train(with_context, verbose=1, splits_path="data/CAT_LARGE/MCCV", the_split_
                     lr = 2e-05
                     if FLAGS.model_name == "BERT:OOC":
                         print("Training BERT with no context mechanism added.")
-                        model = classifiers.BERT_MLP(patience=FLAGS.patience, lr=lr,  epochs=FLAGS.epochs, session=sess)
+                        model = classifiers.BERT_MLP(patience=FLAGS.patience, lr=lr, epochs=FLAGS.epochs, session=sess)
                     elif FLAGS.model_name == "BERT:INC1":
                         print("Training BERT with parent concatenated to text.")
                         model = classifiers.BERT_MLP(patience=FLAGS.patience, lr=lr, DATA2_COLUMN="parent", epochs=FLAGS.epochs, session=sess)

@@ -2,7 +2,7 @@ import tensorflow.keras as keras
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.layers import Dense
 from tensorflow.keras.layers import Embedding
-from tensorflow.keras.layers import GRU, LSTM, Bidirectional, TimeDistributed
+from tensorflow.keras.layers import LSTM, Bidirectional
 from tensorflow.keras.layers import Input
 from tensorflow.keras.models import Model
 from tensorflow.keras.preprocessing import sequence
@@ -15,7 +15,7 @@ import tensorflow as tf
 import tensorflow_hub as hub
 from tensorflow.keras import backend as K
 from bert import tokenization
-from utils import InputExample, convert_examples_to_features
+from ACL2020.utils import InputExample, convert_examples_to_features
 from sklearn.metrics import *
 import pickle
 
